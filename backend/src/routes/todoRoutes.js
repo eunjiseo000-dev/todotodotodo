@@ -423,4 +423,104 @@ router.put('/:id', authMiddleware, async (req, res) => {
   }
 });
 
+// DELETE /api/todos/:id - 할일 삭제 (소프트 삭제)
+router.delete('/:id', authMiddleware, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const todoId = req.params.id;
+
+    // 1. 할일 존재 여부 확인 및 사용자 권한 검증
+    const findTodoQuery = `
+      SELECT
+        todoid,
+        userid
+      FROM todo
+      WHERE todoid = $1
+    `;
+    const findTodoResult = await pool.query(findTodoQuery, [todoId]);
+
+    if (findTodoResult.rows.length === 0) {
+      return res.status(404).json({
+        status: 'error',
+        message: 'Todo not found',
+        errorCode: 'NOT_FOUND',
+      });
+    }
+
+    const todo = findTodoResult.rows[0];
+
+    // 2. 사용자 권한 확인 (자신의 할일만 삭제 가능)
+    if (todo.userid !== userId) {
+      return res.status(403).json({
+        status: 'error',
+        message: 'You do not have permission to access this resource',
+        errorCode: 'FORBIDDEN',
+      });
+    }
+
+    // 3. 소프트 삭제 쿼리 실행 (isdeleted=true, deletedat=현재 시각)
+    const updateQuery = `
+      UPDATE todo
+      SET
+        isdeleted = true,
+        deletedat = NOW(),
+        updatedat = NOW()
+      WHERE todoid = $1 AND userid = $2
+      RETURNING
+        todoid,
+        userid,
+        title,
+        startdate,
+        enddate,
+        priority,
+        iscompleted,
+        isdeleted,
+        createdat,
+        updatedat,
+        deletedat
+    `;
+
+    const updateResult = await pool.query(updateQuery, [todoId, userId]);
+
+    // 4. 업데이트된 할일 객체 변환 (camelCase로)
+    const updatedRow = updateResult.rows[0];
+    const formatDate = (date) => {
+      if (!date) return null;
+      const d = new Date(date);
+      const year = d.getFullYear();
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    };
+
+    const deletedTodo = {
+      todoId: updatedRow.todoid,
+      userId: updatedRow.userid,
+      title: updatedRow.title,
+      startDate: formatDate(updatedRow.startdate),
+      endDate: formatDate(updatedRow.enddate),
+      priority: updatedRow.priority,
+      isCompleted: updatedRow.iscompleted,
+      isDeleted: updatedRow.isdeleted,
+      createdAt: updatedRow.createdat,
+      updatedAt: updatedRow.updatedat,
+      deletedAt: updatedRow.deletedat,
+    };
+
+    // 5. 응답 반환
+    res.status(200).json({
+      status: 'success',
+      message: 'Todo moved to trash successfully',
+      data: deletedTodo,
+    });
+  } catch (err) {
+    console.error('Delete todo error:', err);
+    res.status(500).json({
+      status: 'error',
+      message: 'Internal server error',
+      errorCode: 'INTERNAL_ERROR',
+    });
+  }
+});
+
 module.exports = router;

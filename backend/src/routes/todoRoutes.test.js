@@ -728,8 +728,8 @@ describe('PUT /api/todos/{id} - 할일 수정 API', () => {
     try {
       // 테스트 할일 상태 초기화
       await pool.query(
-        'UPDATE todo SET title = $1, startdate = $2, enddate = $3, iscompleted = $4, isdeleted = $5 WHERE userid = $6',
-        ['기존 할일 제목', '2025-01-01', '2025-01-10', false, false, testUser1.userid]
+        'UPDATE todo SET title = $1, startdate = $2, enddate = $3, iscompleted = $4, isdeleted = $5, deletedat = $6 WHERE userid = $7',
+        ['기존 할일 제목', '2025-01-01', '2025-01-10', false, false, null, testUser1.userid]
       );
     } catch (err) {
       console.error('afterEach error:', err);
@@ -984,6 +984,194 @@ describe('PUT /api/todos/{id} - 할일 수정 API', () => {
     expect(response.body.status).toBe('error');
     expect(response.body.errorCode).toBe('INVALID_DATE_RANGE');
     expect(response.body.message).toBe('Start date must be before or equal to end date');
+  });
+});
+
+// ========================================================================
+// DELETE /api/todos/{id} - 할일 삭제(휴지통 이동) API 테스트
+// ========================================================================
+
+describe('DELETE /api/todos/{id} - 할일 삭제 API', () => {
+  let testUser1;
+  let testUser2;
+  let token1;
+  let token2;
+  let testTodo1;
+  let testTodo2; // 다른 사용자의 할일
+
+  // 테스트 사용자 생성
+  beforeAll(async () => {
+    try {
+      // 테스트 사용자 1 생성
+      const user1Result = await pool.query(
+        'INSERT INTO "user" (email, passwordhash, name) VALUES ($1, $2, $3) RETURNING userid, email, name',
+        [
+          `test-delete-user1-${Date.now()}@example.com`,
+          '$2b$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcg7b3XeKeUxWdeS86E36gZvWFm', // dummy hash
+          'Test Delete User 1',
+        ]
+      );
+      testUser1 = user1Result.rows[0];
+      token1 = generateToken(testUser1.userid);
+
+      // 테스트 사용자 2 생성 (다른 사용자 데이터 격리 테스트용)
+      const user2Result = await pool.query(
+        'INSERT INTO "user" (email, passwordhash, name) VALUES ($1, $2, $3) RETURNING userid, email, name',
+        [
+          `test-delete-user2-${Date.now()}@example.com`,
+          '$2b$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcg7b3XeKeUxWdeS86E36gZvWFm',
+          'Test Delete User 2',
+        ]
+      );
+      testUser2 = user2Result.rows[0];
+      token2 = generateToken(testUser2.userid);
+
+      // 테스트용 할일 생성
+      const todo1Result = await pool.query(
+        'INSERT INTO todo (userid, title, startdate, enddate, priority, iscompleted, isdeleted) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *',
+        [testUser1.userid, '삭제할 할일 제목', '2025-01-01', '2025-01-10', 1, false, false]
+      );
+      testTodo1 = todo1Result.rows[0];
+
+      // 다른 사용자의 할일 생성 (권한 테스트용)
+      const todo2Result = await pool.query(
+        'INSERT INTO todo (userid, title, startdate, enddate, priority, iscompleted, isdeleted) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *',
+        [testUser2.userid, '다른 사용자 할일', '2025-01-01', '2025-01-10', 1, false, false]
+      );
+      testTodo2 = todo2Result.rows[0];
+    } catch (err) {
+      console.error('beforeAll error:', err);
+    }
+  });
+
+  // 각 테스트 후 테스트 데이터 정리
+  afterEach(async () => {
+    try {
+      // 테스트 할일 상태 초기화 (삭제 상태 되돌리기)
+      await pool.query(
+        'UPDATE todo SET isdeleted = false, deletedat = NULL WHERE userid = $1',
+        [testUser1.userid]
+      );
+      // 다른 사용자의 할일도 초기화 (testUser2 관련 데이터도 초기화)
+      await pool.query(
+        'UPDATE todo SET isdeleted = false, deletedat = NULL WHERE userid = $1',
+        [testUser2.userid]
+      );
+    } catch (err) {
+      console.error('afterEach error:', err);
+    }
+  });
+
+  // 테스트 종료 후 사용자 및 할일 정리
+  afterAll(async () => {
+    try {
+      if (testUser1) {
+        await pool.query('DELETE FROM todo WHERE userid = $1', [testUser1.userid]);
+        await pool.query('DELETE FROM "user" WHERE userid = $1', [testUser1.userid]);
+      }
+      if (testUser2) {
+        await pool.query('DELETE FROM todo WHERE userid = $1', [testUser2.userid]);
+        await pool.query('DELETE FROM "user" WHERE userid = $1', [testUser2.userid]);
+      }
+    } catch (err) {
+      console.error('afterAll error:', err);
+    }
+  });
+
+  // ========== A. 성공 케이스 (2개) ==========
+
+  test('1. 유효한 할일 ID로 삭제 성공 - 소프트 삭제', async () => {
+    const response = await request(app)
+      .delete(`/api/todos/${testTodo1.todoid}`)
+      .set('Authorization', `Bearer ${token1}`);
+
+    expect(response.status).toBe(200);
+    expect(response.body.status).toBe('success');
+    expect(response.body.message).toBe('Todo moved to trash successfully');
+    expect(response.body.data).toHaveProperty('todoId');
+    expect(response.body.data.userId).toBe(testUser1.userid);
+    expect(response.body.data.isDeleted).toBe(true);
+    expect(response.body.data.deletedAt).not.toBeNull();
+    expect(response.body.data.title).toBe(testTodo1.title);
+  });
+
+  test('2. 삭제된 할일이 GET /api/todos?status=deleted로 조회 가능', async () => {
+    // 먼저 할일 삭제
+    const deleteResponse = await request(app)
+      .delete(`/api/todos/${testTodo1.todoid}`)
+      .set('Authorization', `Bearer ${token1}`);
+
+    expect(deleteResponse.status).toBe(200);
+    expect(deleteResponse.body.data.isDeleted).toBe(true);
+
+    // 삭제된 할일 조회 확인
+    const getResponse = await request(app)
+      .get('/api/todos?status=deleted')
+      .set('Authorization', `Bearer ${token1}`);
+
+    expect(getResponse.status).toBe(200);
+    expect(getResponse.body.data.count).toBe(1);
+    expect(getResponse.body.data.todos[0].todoId).toBe(testTodo1.todoid);
+    expect(getResponse.body.data.todos[0].isDeleted).toBe(true);
+  });
+
+  // ========== B. 인증 관련 (3개) ==========
+
+  test('3. 토큰 없이 요청 시 401 Unauthorized', async () => {
+    const response = await request(app)
+      .delete(`/api/todos/${testTodo1.todoid}`);
+      // Authorization 헤더 없음
+
+    expect(response.status).toBe(401);
+    expect(response.body.status).toBe('error');
+    expect(response.body.errorCode).toBe('MISSING_AUTH_HEADER');
+  });
+
+  test('4. 잘못된 토큰으로 요청 시 401 Unauthorized', async () => {
+    const response = await request(app)
+      .delete(`/api/todos/${testTodo1.todoid}`)
+      .set('Authorization', 'Bearer invalid.token.here');
+
+    expect(response.status).toBe(401);
+    expect(response.body.status).toBe('error');
+    expect(response.body.errorCode).toBe('INVALID_TOKEN');
+  });
+
+  test('5. 다른 사용자의 할일 삭제 시도 - 403 Forbidden', async () => {
+    const response = await request(app)
+      .delete(`/api/todos/${testTodo2.todoid}`) // testUser2의 할일
+      .set('Authorization', `Bearer ${token1}`); // testUser1 토큰
+
+    expect(response.status).toBe(403);
+    expect(response.body.status).toBe('error');
+    expect(response.body.errorCode).toBe('FORBIDDEN');
+    expect(response.body.message).toBe('You do not have permission to access this resource');
+  });
+
+  // ========== C. 존재하지 않는 할일 (2개) ==========
+
+  test('6. 존재하지 않는 할일 ID로 삭제 시도 - 404 Not Found', async () => {
+    const fakeTodoId = '11111111-1111-1111-1111-111111111111';
+
+    const response = await request(app)
+      .delete(`/api/todos/${fakeTodoId}`)
+      .set('Authorization', `Bearer ${token1}`);
+
+    expect(response.status).toBe(404);
+    expect(response.body.status).toBe('error');
+    expect(response.body.errorCode).toBe('NOT_FOUND');
+    expect(response.body.message).toBe('Todo not found');
+  });
+
+  test('7. 다른 사용자의 존재하는 할일 접근 - 403 Forbidden (not 404)', async () => {
+    const response = await request(app)
+      .delete(`/api/todos/${testTodo2.todoid}`) // testUser2의 할일
+      .set('Authorization', `Bearer ${token1}`) // testUser1 토큰
+
+    expect(response.status).toBe(403);
+    expect(response.body.status).toBe('error');
+    expect(response.body.errorCode).toBe('FORBIDDEN');
+    expect(response.body.message).toBe('You do not have permission to access this resource');
   });
 });
 
