@@ -246,4 +246,181 @@ router.post('/', authMiddleware, async (req, res) => {
   }
 });
 
+// PUT /api/todos/:id - 할일 수정
+router.put('/:id', authMiddleware, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const todoId = req.params.id;
+    const { title, startDate, endDate } = req.body;
+
+    // 1. 할일 존재 여부 확인 및 사용자 권한 검증
+    const findTodoQuery = `
+      SELECT
+        todoid,
+        userid,
+        title,
+        startdate,
+        enddate,
+        priority,
+        iscompleted,
+        isdeleted,
+        createdat,
+        updatedat,
+        deletedat
+      FROM todo
+      WHERE todoid = $1
+    `;
+    const findTodoResult = await pool.query(findTodoQuery, [todoId]);
+
+    if (findTodoResult.rows.length === 0) {
+      return res.status(404).json({
+        status: 'error',
+        message: 'Todo not found',
+        errorCode: 'NOT_FOUND',
+      });
+    }
+
+    const todo = findTodoResult.rows[0];
+
+    // 2. 사용자 권한 확인 (자신의 할일만 수정 가능)
+    if (todo.userid !== userId) {
+      return res.status(403).json({
+        status: 'error',
+        message: 'You do not have permission to access this resource',
+        errorCode: 'FORBIDDEN',
+      });
+    }
+
+    // 3. 삭제된 할일인지 확인 (isDeleted=true일 경우 수정 불가)
+    if (todo.isdeleted) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'Cannot modify a deleted todo',
+        errorCode: 'BAD_REQUEST',
+      });
+    }
+
+    // 4. 요청 바디 필드 검증 (title, startDate, endDate가 모두 없을 경우는 통과)
+    const hasTitle = title !== undefined && title !== null;
+    const hasStartDate = startDate !== undefined && startDate !== null;
+    const hasEndDate = endDate !== undefined && endDate !== null;
+
+    if (hasTitle) {
+      const titleValidation = validateTitle(title);
+      if (!titleValidation.valid) {
+        return res.status(400).json({
+          status: 'error',
+          message: titleValidation.error,
+          errorCode: 'INVALID_TITLE',
+        });
+      }
+    }
+
+    if (hasStartDate) {
+      const dateValidation = validateDate(startDate);
+      if (!dateValidation.valid) {
+        return res.status(400).json({
+          status: 'error',
+          message: `Invalid startDate: ${dateValidation.error}`,
+          errorCode: 'INVALID_DATE',
+        });
+      }
+    }
+
+    if (hasEndDate) {
+      const dateValidation = validateDate(endDate);
+      if (!dateValidation.valid) {
+        return res.status(400).json({
+          status: 'error',
+          message: `Invalid endDate: ${dateValidation.error}`,
+          errorCode: 'INVALID_DATE',
+        });
+      }
+    }
+
+    // 5. 날짜 범위 검증: startDate와 endDate가 모두 있는 경우
+    let actualStartDate = hasStartDate ? startDate : todo.startdate;
+    let actualEndDate = hasEndDate ? endDate : todo.enddate;
+
+    if (hasStartDate || hasEndDate) {
+      const dateRangeValidation = validateDateRange(actualStartDate, actualEndDate);
+      if (!dateRangeValidation.valid) {
+        return res.status(400).json({
+          status: 'error',
+          message: dateRangeValidation.error,
+          errorCode: 'INVALID_DATE_RANGE',
+        });
+      }
+    }
+
+    // 6. 업데이트 쿼리 - 제공된 필드만 업데이트
+    let updateQuery = 'UPDATE todo SET updatedat = NOW()';
+    const updateParams = [];
+    let paramIndex = 2; // 1번은 todoId
+
+    if (hasTitle) {
+      updateQuery += `, title = $${paramIndex}`;
+      updateParams.push(title);
+      paramIndex++;
+    }
+
+    if (hasStartDate) {
+      updateQuery += `, startdate = $${paramIndex}`;
+      updateParams.push(startDate);
+      paramIndex++;
+    }
+
+    if (hasEndDate) {
+      updateQuery += `, enddate = $${paramIndex}`;
+      updateParams.push(endDate);
+      paramIndex++;
+    }
+
+    updateQuery += ` WHERE todoid = $${paramIndex} AND userid = $1 RETURNING *`;
+    updateParams.unshift(userId); // userId를 배열 맨 앞에 추가 (파라미터 1번)
+    updateParams.push(todoId); // todoId를 배열 끝에 추가 (마지막 파라미터)
+
+    const updateResult = await pool.query(updateQuery, updateParams);
+
+    // 7. 업데이트된 할일 객체 변환 (camelCase로)
+    const updatedRow = updateResult.rows[0];
+    const formatDate = (date) => {
+      if (!date) return null;
+      const d = new Date(date);
+      const year = d.getFullYear();
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    };
+
+    const updatedTodo = {
+      todoId: updatedRow.todoid,
+      userId: updatedRow.userid,
+      title: updatedRow.title,
+      startDate: formatDate(updatedRow.startdate),
+      endDate: formatDate(updatedRow.enddate),
+      priority: updatedRow.priority,
+      isCompleted: updatedRow.iscompleted,
+      isDeleted: updatedRow.isdeleted,
+      createdAt: updatedRow.createdat,
+      updatedAt: updatedRow.updatedat,
+      deletedAt: updatedRow.deletedat,
+    };
+
+    // 8. 응답 반환
+    res.status(200).json({
+      status: 'success',
+      message: 'Todo updated successfully',
+      data: updatedTodo,
+    });
+  } catch (err) {
+    console.error('Update todo error:', err);
+    res.status(500).json({
+      status: 'error',
+      message: 'Internal server error',
+      errorCode: 'INTERNAL_ERROR',
+    });
+  }
+});
+
 module.exports = router;
