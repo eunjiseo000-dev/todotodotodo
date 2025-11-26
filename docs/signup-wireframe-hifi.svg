@@ -1,0 +1,210 @@
+<svg width="1200" height="900" xmlns="http://www.w3.org/2000/svg">
+  <!-- High Fidelity Wireframe: 회원가입 페이지 (Desktop) -->
+  <!-- ToDoToDoToDo Project -->
+
+  <defs>
+    <!-- 그림자 필터 정의 -->
+    <filter id="cardShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="3"/>
+      <feOffset dx="0" dy="1" result="offsetblur"/>
+      <feComponentTransfer>
+        <feFuncA type="linear" slope="0.12"/>
+      </feComponentTransfer>
+      <feMerge>
+        <feMergeNode/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+
+    <!-- 버튼 호버 그림자 -->
+    <filter id="buttonShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="2"/>
+      <feOffset dx="0" dy="2" result="offsetblur"/>
+      <feComponentTransfer>
+        <feFuncA type="linear" slope="0.2"/>
+      </feComponentTransfer>
+      <feMerge>
+        <feMergeNode/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- 배경 -->
+  <rect width="1200" height="900" fill="#FAFAFA"/>
+
+  <!-- 로고/타이틀 영역 -->
+  <g id="logo-section">
+    <text x="600" y="120" font-family="system-ui, -apple-system, sans-serif" font-size="32" font-weight="700" fill="#212121" text-anchor="middle">
+      ToDoToDoToDo
+    </text>
+    <text x="600" y="155" font-family="system-ui, -apple-system, sans-serif" font-size="16" font-weight="400" fill="#757575" text-anchor="middle">
+      할일 관리 서비스
+    </text>
+  </g>
+
+  <!-- 회원가입 카드 -->
+  <g id="signup-card" filter="url(#cardShadow)">
+    <!-- 카드 배경 (최대 너비 400px, 중앙 정렬) -->
+    <rect x="400" y="200" width="400" height="580" rx="8" fill="#FFFFFF"/>
+
+    <!-- 카드 제목 -->
+    <text x="600" y="245" font-family="system-ui, -apple-system, sans-serif" font-size="24" font-weight="600" fill="#212121" text-anchor="middle">
+      회원가입
+    </text>
+
+    <!-- 이메일 입력 필드 -->
+    <g id="email-field">
+      <text x="420" y="290" font-family="system-ui, -apple-system, sans-serif" font-size="14" font-weight="500" fill="#212121">
+        이메일
+      </text>
+      <rect x="420" y="298" width="360" height="48" rx="4" fill="#FFFFFF" stroke="#E0E0E0" stroke-width="1"/>
+      <text x="432" y="327" font-family="system-ui, -apple-system, sans-serif" font-size="16" fill="#757575">
+        example@email.com
+      </text>
+    </g>
+
+    <!-- 비밀번호 입력 필드 -->
+    <g id="password-field">
+      <text x="420" y="375" font-family="system-ui, -apple-system, sans-serif" font-size="14" font-weight="500" fill="#212121">
+        비밀번호
+      </text>
+      <rect x="420" y="383" width="360" height="48" rx="4" fill="#FFFFFF" stroke="#E0E0E0" stroke-width="1"/>
+      <text x="432" y="412" font-family="system-ui, -apple-system, sans-serif" font-size="16" fill="#212121">
+        ••••••••
+      </text>
+      <!-- 도움말 텍스트 -->
+      <text x="420" y="447" font-family="system-ui, -apple-system, sans-serif" font-size="12" fill="#757575">
+        * 8자 이상, 영문+숫자+특수문자
+      </text>
+    </g>
+
+    <!-- 비밀번호 확인 입력 필드 -->
+    <g id="password-confirm-field">
+      <text x="420" y="480" font-family="system-ui, -apple-system, sans-serif" font-size="14" font-weight="500" fill="#212121">
+        비밀번호 확인
+      </text>
+      <rect x="420" y="488" width="360" height="48" rx="4" fill="#FFFFFF" stroke="#E0E0E0" stroke-width="1"/>
+      <text x="432" y="517" font-family="system-ui, -apple-system, sans-serif" font-size="16" fill="#212121">
+        ••••••••
+      </text>
+    </g>
+
+    <!-- 이름 입력 필드 -->
+    <g id="name-field">
+      <text x="420" y="565" font-family="system-ui, -apple-system, sans-serif" font-size="14" font-weight="500" fill="#212121">
+        이름
+      </text>
+      <rect x="420" y="573" width="360" height="48" rx="4" fill="#FFFFFF" stroke="#E0E0E0" stroke-width="1"/>
+      <text x="432" y="602" font-family="system-ui, -apple-system, sans-serif" font-size="16" fill="#757575">
+        홍길동
+      </text>
+      <!-- 도움말 텍스트 -->
+      <text x="420" y="637" font-family="system-ui, -apple-system, sans-serif" font-size="12" fill="#757575">
+        * 2-50자
+      </text>
+    </g>
+
+    <!-- 회원가입 버튼 -->
+    <g id="signup-button">
+      <rect x="420" y="660" width="360" height="48" rx="4" fill="#1976D2" filter="url(#buttonShadow)"/>
+      <text x="600" y="689" font-family="system-ui, -apple-system, sans-serif" font-size="16" font-weight="600" fill="#FFFFFF" text-anchor="middle">
+        회원가입
+      </text>
+    </g>
+
+    <!-- 로그인 링크 -->
+    <g id="login-link">
+      <text x="600" y="735" font-family="system-ui, -apple-system, sans-serif" font-size="14" fill="#757575" text-anchor="middle">
+        이미 계정이 있으신가요?
+        <tspan fill="#1976D2" font-weight="500" style="cursor: pointer; text-decoration: underline;">로그인</tspan>
+      </text>
+    </g>
+  </g>
+
+  <!-- 에러 상태 예시 (하단에 표시) -->
+  <g id="error-state-example" opacity="0.7">
+    <!-- 구분선 -->
+    <line x1="100" y1="815" x2="1100" y2="815" stroke="#E0E0E0" stroke-width="1"/>
+
+    <text x="100" y="845" font-family="system-ui, -apple-system, sans-serif" font-size="14" font-weight="600" fill="#212121">
+      에러 상태 예시:
+    </text>
+
+    <!-- 에러 메시지 예시 -->
+    <g id="error-message-sample">
+      <rect x="100" y="855" width="360" height="25" rx="4" fill="#FFFFFF" stroke="#F44336" stroke-width="2"/>
+      <text x="112" y="874" font-family="system-ui, -apple-system, sans-serif" font-size="16" fill="#212121">
+        example@email
+      </text>
+      <!-- 에러 아이콘 -->
+      <circle cx="450" cy="867" r="8" fill="#F44336"/>
+      <text x="447" y="872" font-family="system-ui, -apple-system, sans-serif" font-size="12" font-weight="700" fill="#FFFFFF">
+        ✕
+      </text>
+      <!-- 에러 메시지 텍스트 -->
+      <text x="100" y="895" font-family="system-ui, -apple-system, sans-serif" font-size="12" fill="#F44336">
+        ✕ 이메일 형식이 올바르지 않습니다
+      </text>
+    </g>
+
+    <!-- 포커스 상태 예시 -->
+    <g id="focus-state-sample">
+      <text x="520" y="870" font-family="system-ui, -apple-system, sans-serif" font-size="12" font-weight="600" fill="#212121">
+        포커스 상태:
+      </text>
+      <rect x="610" y="855" width="180" height="25" rx="4" fill="#FFFFFF" stroke="#1976D2" stroke-width="2"/>
+      <text x="622" y="874" font-family="system-ui, -apple-system, sans-serif" font-size="16" fill="#757575">
+        입력 중...
+      </text>
+    </g>
+
+    <!-- 버튼 호버 상태 예시 -->
+    <g id="button-hover-sample">
+      <text x="840" y="870" font-family="system-ui, -apple-system, sans-serif" font-size="12" font-weight="600" fill="#212121">
+        버튼 호버:
+      </text>
+      <rect x="940" y="855" width="120" height="30" rx="4" fill="#1565C0"/>
+      <text x="1000" y="876" font-family="system-ui, -apple-system, sans-serif" font-size="14" font-weight="600" fill="#FFFFFF" text-anchor="middle">
+        회원가입
+      </text>
+    </g>
+  </g>
+
+  <!-- 디자인 시스템 정보 (우측 하단) -->
+  <g id="design-info" opacity="0.5">
+    <text x="900" y="25" font-family="system-ui, -apple-system, monospace" font-size="11" fill="#757575">
+      High Fidelity Wireframe v1.0
+    </text>
+    <text x="900" y="40" font-family="system-ui, -apple-system, monospace" font-size="11" fill="#757575">
+      Desktop Layout (1200x900)
+    </text>
+    <text x="900" y="55" font-family="system-ui, -apple-system, monospace" font-size="11" fill="#757575">
+      Primary: #1976D2 | Error: #F44336
+    </text>
+    <text x="900" y="70" font-family="system-ui, -apple-system, monospace" font-size="11" fill="#757575">
+      Background: #FAFAFA | Text: #212121
+    </text>
+  </g>
+
+  <!-- 치수 안내선 (선택적 - 개발자용) -->
+  <g id="dimension-guides" opacity="0.3">
+    <!-- 카드 너비 안내 -->
+    <line x1="400" y1="190" x2="800" y2="190" stroke="#FF9800" stroke-width="1" stroke-dasharray="5,5"/>
+    <text x="600" y="185" font-family="system-ui, -apple-system, monospace" font-size="10" fill="#FF9800" text-anchor="middle">
+      400px
+    </text>
+
+    <!-- 입력 필드 높이 안내 -->
+    <line x1="385" y1="298" x2="385" y2="346" stroke="#FF9800" stroke-width="1" stroke-dasharray="5,5"/>
+    <text x="375" y="325" font-family="system-ui, -apple-system, monospace" font-size="10" fill="#FF9800" text-anchor="end">
+      48px
+    </text>
+
+    <!-- 둥근 모서리 안내 -->
+    <circle cx="420" cy="298" r="4" fill="none" stroke="#FF9800" stroke-width="1"/>
+    <text x="410" y="295" font-family="system-ui, -apple-system, monospace" font-size="9" fill="#FF9800" text-anchor="end">
+      r=4px
+    </text>
+  </g>
+</svg>
