@@ -633,4 +633,115 @@ router.post('/:id/restore', authMiddleware, async (req, res) => {
   }
 });
 
+// PATCH /api/todos/:id/complete - 할일 완료 처리
+router.patch('/:id/complete', authMiddleware, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const todoId = req.params.id;
+
+    // 1. 할일 존재 여부 확인 및 사용자 권한 검증
+    const findTodoQuery = `
+      SELECT
+        todoid,
+        userid,
+        iscompleted,
+        isdeleted
+      FROM todo
+      WHERE todoid = $1
+    `;
+    const findTodoResult = await pool.query(findTodoQuery, [todoId]);
+
+    if (findTodoResult.rows.length === 0) {
+      return res.status(404).json({
+        status: 'error',
+        message: 'Todo not found',
+        errorCode: 'NOT_FOUND',
+      });
+    }
+
+    const todo = findTodoResult.rows[0];
+
+    // 2. 사용자 권한 확인 (자신의 할일만 완료 처리 가능)
+    if (todo.userid !== userId) {
+      return res.status(403).json({
+        status: 'error',
+        message: 'You do not have permission to access this resource',
+        errorCode: 'FORBIDDEN',
+      });
+    }
+
+    // 3. 삭제된 할일인지 확인 (삭제된 할일은 완료 처리할 수 없음)
+    if (todo.isdeleted) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'Cannot complete a deleted todo',
+        errorCode: 'BAD_REQUEST',
+      });
+    }
+
+    // 4. 완료 상태 토글 (true <-> false)
+    const newCompletedStatus = !todo.iscompleted;
+    const updateQuery = `
+      UPDATE todo
+      SET
+        iscompleted = $1,
+        updatedat = NOW()
+      WHERE todoid = $2 AND userid = $3
+      RETURNING
+        todoid,
+        userid,
+        title,
+        startdate,
+        enddate,
+        priority,
+        iscompleted,
+        isdeleted,
+        createdat,
+        updatedat,
+        deletedat
+    `;
+
+    const updateResult = await pool.query(updateQuery, [newCompletedStatus, todoId, userId]);
+
+    // 5. 업데이트된 할일 객체 변환 (camelCase로)
+    const updatedRow = updateResult.rows[0];
+    const formatDate = (date) => {
+      if (!date) return null;
+      const d = new Date(date);
+      const year = d.getFullYear();
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    };
+
+    const completedTodo = {
+      todoId: updatedRow.todoid,
+      userId: updatedRow.userid,
+      title: updatedRow.title,
+      startDate: formatDate(updatedRow.startdate),
+      endDate: formatDate(updatedRow.enddate),
+      priority: updatedRow.priority,
+      isCompleted: updatedRow.iscompleted,
+      isDeleted: updatedRow.isdeleted,
+      createdAt: updatedRow.createdat,
+      updatedAt: updatedRow.updatedat,
+      deletedAt: updatedRow.deletedat,
+    };
+
+    // 6. 응답 반환
+    res.status(200).json({
+      status: 'success',
+      message: newCompletedStatus ? 'Todo completed successfully' : 'Todo uncompleted successfully',
+      data: completedTodo,
+    });
+  } catch (err) {
+    console.error('Complete todo error:', err);
+    res.status(500).json({
+      status: 'error',
+      message: 'Internal server error',
+      errorCode: 'INTERNAL_ERROR',
+    });
+  }
+});
+
 module.exports = router;
