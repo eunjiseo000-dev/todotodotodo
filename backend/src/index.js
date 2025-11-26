@@ -25,7 +25,7 @@ app.get('/health', (req, res) => {
 
 // 라우트
 app.use('/api/auth', require('./routes/authRoutes'));
-// app.use('/api/todos', require('./routes/todoRoutes'));
+app.use('/api/todos', require('./routes/todoRoutes'));
 
 // 404 핸들러
 app.use((req, res) => {
