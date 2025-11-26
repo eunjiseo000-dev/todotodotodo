@@ -1175,6 +1175,209 @@ describe('DELETE /api/todos/{id} - 할일 삭제 API', () => {
   });
 });
 
+// ========================================================================
+// POST /api/todos/{id}/restore - 할일 복원 API 테스트
+// ========================================================================
+
+describe('POST /api/todos/{id}/restore - 할일 복원 API', () => {
+  let testUser1;
+  let testUser2;
+  let token1;
+  let token2;
+  let testTodo1;
+  let testTodo2; // 다른 사용자의 할일
+  let deletedTodo; // 삭제된 할일
+
+  // 테스트 사용자 생성
+  beforeAll(async () => {
+    try {
+      // 테스트 사용자 1 생성
+      const user1Result = await pool.query(
+        'INSERT INTO "user" (email, passwordhash, name) VALUES ($1, $2, $3) RETURNING userid, email, name',
+        [
+          `test-restore-user1-${Date.now()}@example.com`,
+          '$2b$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcg7b3XeKeUxWdeS86E36gZvWFm', // dummy hash
+          'Test Restore User 1',
+        ]
+      );
+      testUser1 = user1Result.rows[0];
+      token1 = generateToken(testUser1.userid);
+
+      // 테스트 사용자 2 생성 (다른 사용자 데이터 격리 테스트용)
+      const user2Result = await pool.query(
+        'INSERT INTO "user" (email, passwordhash, name) VALUES ($1, $2, $3) RETURNING userid, email, name',
+        [
+          `test-restore-user2-${Date.now()}@example.com`,
+          '$2b$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcg7b3XeKeUxWdeS86E36gZvWFm',
+          'Test Restore User 2',
+        ]
+      );
+      testUser2 = user2Result.rows[0];
+      token2 = generateToken(testUser2.userid);
+
+      // 테스트용 할일 생성
+      const todo1Result = await pool.query(
+        'INSERT INTO todo (userid, title, startdate, enddate, priority, iscompleted, isdeleted) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *',
+        [testUser1.userid, '복원할 할일 제목', '2025-01-01', '2025-01-10', 1, false, false]
+      );
+      testTodo1 = todo1Result.rows[0];
+
+      // 다른 사용자의 할일 생성 (권한 테스트용)
+      const todo2Result = await pool.query(
+        'INSERT INTO todo (userid, title, startdate, enddate, priority, iscompleted, isdeleted) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *',
+        [testUser2.userid, '다른 사용자 할일', '2025-01-01', '2025-01-10', 1, false, false]
+      );
+      testTodo2 = todo2Result.rows[0];
+
+      // 삭제된 할일 생성 (복원 테스트용)
+      const deletedTodoResult = await pool.query(
+        'INSERT INTO todo (userid, title, startdate, enddate, priority, iscompleted, isdeleted, deletedat) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *',
+        [testUser1.userid, '삭제된 복원 테스트 할일', '2025-01-01', '2025-01-10', 2, false, true, new Date()]
+      );
+      deletedTodo = deletedTodoResult.rows[0];
+    } catch (err) {
+      console.error('beforeAll error:', err);
+    }
+  });
+
+  // 각 테스트 후 테스트 데이터 정리
+  afterEach(async () => {
+    try {
+      // 할일 상태 초기화 (복원 상태 되돌리기)
+      // deleted 상태로 되돌리기 전에 복원 테스트를 위해 임시로 상태를 원상태로 복구
+      await pool.query(
+        'UPDATE todo SET isdeleted = true, deletedat = NOW() WHERE todoid = $1 AND isdeleted = false',
+        [deletedTodo.todoid]
+      );
+      // 그리고 나서 다른 복원된 할일은 삭제 상태로 되돌림 (testTodo1는 원래 삭제 상태가 아니므로 제외)
+      await pool.query(
+        'UPDATE todo SET isdeleted = true, deletedat = NOW() WHERE userid = $1 AND todoid NOT IN ($2, $3) AND isdeleted = false',
+        [testUser1.userid, deletedTodo.todoid, testTodo1.todoid]
+      );
+    } catch (err) {
+      console.error('afterEach error:', err);
+    }
+  });
+
+  // 테스트 종료 후 사용자 및 할일 정리
+  afterAll(async () => {
+    try {
+      if (testUser1) {
+        await pool.query('DELETE FROM todo WHERE userid = $1', [testUser1.userid]);
+        await pool.query('DELETE FROM "user" WHERE userid = $1', [testUser1.userid]);
+      }
+      if (testUser2) {
+        await pool.query('DELETE FROM todo WHERE userid = $1', [testUser2.userid]);
+        await pool.query('DELETE FROM "user" WHERE userid = $1', [testUser2.userid]);
+      }
+    } catch (err) {
+      console.error('afterAll error:', err);
+    }
+  });
+
+  // ========== A. 성공 케이스 (2개) ==========
+
+  test('1. 유효한 삭제된 할일 ID로 복원 성공', async () => {
+    const response = await request(app)
+      .post(`/api/todos/${deletedTodo.todoid}/restore`)
+      .set('Authorization', `Bearer ${token1}`);
+
+    expect(response.status).toBe(200);
+    expect(response.body.status).toBe('success');
+    expect(response.body.data).toHaveProperty('todoId');
+    expect(response.body.data.userId).toBe(testUser1.userid);
+    expect(response.body.data.isDeleted).toBe(false);
+    expect(response.body.data.deletedAt).toBeNull();
+    expect(response.body.data.title).toBe(deletedTodo.title);
+  });
+
+  test('2. 복원된 할일이 GET /api/todos로 조회 가능', async () => {
+    // 먼저 할일 복원
+    const restoreResponse = await request(app)
+      .post(`/api/todos/${deletedTodo.todoid}/restore`)
+      .set('Authorization', `Bearer ${token1}`);
+
+    expect(restoreResponse.status).toBe(200);
+    expect(restoreResponse.body.data.isDeleted).toBe(false);
+
+    // 복원된 할일이 일반 할일로 조회되는지 확인
+    const getResponse = await request(app)
+      .get('/api/todos')
+      .set('Authorization', `Bearer ${token1}`);
+
+    expect(getResponse.status).toBe(200);
+    // 복원된 할일이 응답에 포함되어야 함
+    const restoredTodo = getResponse.body.data.todos.find(todo => todo.todoId === deletedTodo.todoid);
+    expect(restoredTodo).toBeDefined();
+    expect(restoredTodo.isDeleted).toBe(false);
+  });
+
+  // ========== B. 인증 관련 (3개) ==========
+
+  test('3. 토큰 없이 요청 시 401 Unauthorized', async () => {
+    const response = await request(app)
+      .post(`/api/todos/${deletedTodo.todoid}/restore`);
+      // Authorization 헤더 없음
+
+    expect(response.status).toBe(401);
+    expect(response.body.status).toBe('error');
+    expect(response.body.errorCode).toBe('MISSING_AUTH_HEADER');
+  });
+
+  test('4. 잘못된 토큰으로 요청 시 401 Unauthorized', async () => {
+    const response = await request(app)
+      .post(`/api/todos/${deletedTodo.todoid}/restore`)
+      .set('Authorization', 'Bearer invalid.token.here');
+
+    expect(response.status).toBe(401);
+    expect(response.body.status).toBe('error');
+    expect(response.body.errorCode).toBe('INVALID_TOKEN');
+  });
+
+  test('5. 다른 사용자의 삭제된 할일 복원 시도 - 403 Forbidden', async () => {
+    // 다른 사용자의 할일을 삭제 상태로 만들기
+    await pool.query(
+      'UPDATE todo SET isdeleted = true, deletedat = NOW() WHERE todoid = $1',
+      [testTodo2.todoid]
+    );
+
+    const response = await request(app)
+      .post(`/api/todos/${testTodo2.todoid}/restore`) // testUser2의 삭제된 할일
+      .set('Authorization', `Bearer ${token1}`); // testUser1 토큰
+
+    expect(response.status).toBe(403);
+    expect(response.body.status).toBe('error');
+    expect(response.body.errorCode).toBe('FORBIDDEN');
+    expect(response.body.message).toBe('You do not have permission to access this resource');
+  });
+
+  // ========== C. 존재하지 않거나 복원할 수 없는 할일 (3개) ==========
+
+  test('6. 존재하지 않는 할일 ID로 복원 시도 - 404 Not Found', async () => {
+    const fakeTodoId = '11111111-1111-1111-1111-111111111111';
+
+    const response = await request(app)
+      .post(`/api/todos/${fakeTodoId}/restore`)
+      .set('Authorization', `Bearer ${token1}`);
+
+    expect(response.status).toBe(404);
+    expect(response.body.status).toBe('error');
+    expect(response.body.errorCode).toBe('NOT_FOUND');
+    expect(response.body.message).toBe('Todo not found');
+  });
+
+  test('7. 삭제되지 않은 할일 복원 시도 - 400 Bad Request', async () => {
+    const response = await request(app)
+      .post(`/api/todos/${testTodo1.todoid}/restore`) // 삭제되지 않은 할일
+      .set('Authorization', `Bearer ${token1}`);
+
+    expect(response.status).toBe(400);
+    expect(response.body.status).toBe('error');
+    expect(response.body.errorCode).toBe('BAD_REQUEST');
+    expect(response.body.message).toBe('Cannot restore a non-deleted todo');
+  });
+});
+
 // 모든 테스트 종료 후 DB 연결 종료
 afterAll(async () => {
   if (pool._clients) {

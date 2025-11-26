@@ -523,4 +523,114 @@ router.delete('/:id', authMiddleware, async (req, res) => {
   }
 });
 
+// POST /api/todos/:id/restore - 할일 복원
+router.post('/:id/restore', authMiddleware, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const todoId = req.params.id;
+
+    // 1. 할일 존재 여부 확인 및 사용자 권한 검증
+    const findTodoQuery = `
+      SELECT
+        todoid,
+        userid,
+        isdeleted
+      FROM todo
+      WHERE todoid = $1
+    `;
+    const findTodoResult = await pool.query(findTodoQuery, [todoId]);
+
+    if (findTodoResult.rows.length === 0) {
+      return res.status(404).json({
+        status: 'error',
+        message: 'Todo not found',
+        errorCode: 'NOT_FOUND',
+      });
+    }
+
+    const todo = findTodoResult.rows[0];
+
+    // 2. 사용자 권한 확인 (자신의 할일만 복원 가능)
+    if (todo.userid !== userId) {
+      return res.status(403).json({
+        status: 'error',
+        message: 'You do not have permission to access this resource',
+        errorCode: 'FORBIDDEN',
+      });
+    }
+
+    // 3. 삭제된 할일인지 확인 (복원은 삭제된 할일만 가능)
+    if (!todo.isdeleted) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'Cannot restore a non-deleted todo',
+        errorCode: 'BAD_REQUEST',
+      });
+    }
+
+    // 4. 복원 쿼리 실행 (isdeleted=false, deletedat=null)
+    const updateQuery = `
+      UPDATE todo
+      SET
+        isdeleted = false,
+        deletedat = NULL,
+        updatedat = NOW()
+      WHERE todoid = $1 AND userid = $2
+      RETURNING
+        todoid,
+        userid,
+        title,
+        startdate,
+        enddate,
+        priority,
+        iscompleted,
+        isdeleted,
+        createdat,
+        updatedat,
+        deletedat
+    `;
+
+    const updateResult = await pool.query(updateQuery, [todoId, userId]);
+
+    // 5. 복원된 할일 객체 변환 (camelCase로)
+    const updatedRow = updateResult.rows[0];
+    const formatDate = (date) => {
+      if (!date) return null;
+      const d = new Date(date);
+      const year = d.getFullYear();
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    };
+
+    const restoredTodo = {
+      todoId: updatedRow.todoid,
+      userId: updatedRow.userid,
+      title: updatedRow.title,
+      startDate: formatDate(updatedRow.startdate),
+      endDate: formatDate(updatedRow.enddate),
+      priority: updatedRow.priority,
+      isCompleted: updatedRow.iscompleted,
+      isDeleted: updatedRow.isdeleted,
+      createdAt: updatedRow.createdat,
+      updatedAt: updatedRow.updatedat,
+      deletedAt: updatedRow.deletedat,
+    };
+
+    // 6. 응답 반환
+    res.status(200).json({
+      status: 'success',
+      message: 'Todo restored successfully',
+      data: restoredTodo,
+    });
+  } catch (err) {
+    console.error('Restore todo error:', err);
+    res.status(500).json({
+      status: 'error',
+      message: 'Internal server error',
+      errorCode: 'INTERNAL_ERROR',
+    });
+  }
+});
+
 module.exports = router;
