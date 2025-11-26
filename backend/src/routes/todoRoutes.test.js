@@ -666,7 +666,330 @@ describe('POST /api/todos - 할일 추가 API', () => {
   });
 });
 
+// ========================================================================
+// PUT /api/todos/{id} - 할일 수정 API 테스트
+// ========================================================================
+
+describe('PUT /api/todos/{id} - 할일 수정 API', () => {
+  let testUser1;
+  let testUser2;
+  let token1;
+  let token2;
+  let testTodo1;
+  let testTodo2; // 다른 사용자의 할일
+
+  // 테스트 사용자 생성
+  beforeAll(async () => {
+    try {
+      // 테스트 사용자 1 생성
+      const user1Result = await pool.query(
+        'INSERT INTO "user" (email, passwordhash, name) VALUES ($1, $2, $3) RETURNING userid, email, name',
+        [
+          `test-update-user1-${Date.now()}@example.com`,
+          '$2b$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcg7b3XeKeUxWdeS86E36gZvWFm', // dummy hash
+          'Test Update User 1',
+        ]
+      );
+      testUser1 = user1Result.rows[0];
+      token1 = generateToken(testUser1.userid);
+
+      // 테스트 사용자 2 생성 (다른 사용자 데이터 격리 테스트용)
+      const user2Result = await pool.query(
+        'INSERT INTO "user" (email, passwordhash, name) VALUES ($1, $2, $3) RETURNING userid, email, name',
+        [
+          `test-update-user2-${Date.now()}@example.com`,
+          '$2b$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcg7b3XeKeUxWdeS86E36gZvWFm',
+          'Test Update User 2',
+        ]
+      );
+      testUser2 = user2Result.rows[0];
+      token2 = generateToken(testUser2.userid);
+
+      // 테스트용 할일 생성
+      const todo1Result = await pool.query(
+        'INSERT INTO todo (userid, title, startdate, enddate, priority, iscompleted, isdeleted) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *',
+        [testUser1.userid, '기존 할일 제목', '2025-01-01', '2025-01-10', 1, false, false]
+      );
+      testTodo1 = todo1Result.rows[0];
+
+      // 다른 사용자의 할일 생성 (권한 테스트용)
+      const todo2Result = await pool.query(
+        'INSERT INTO todo (userid, title, startdate, enddate, priority, iscompleted, isdeleted) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *',
+        [testUser2.userid, '다른 사용자 할일', '2025-01-01', '2025-01-10', 1, false, false]
+      );
+      testTodo2 = todo2Result.rows[0];
+    } catch (err) {
+      console.error('beforeAll error:', err);
+    }
+  });
+
+  // 각 테스트 후 테스트 데이터 정리
+  afterEach(async () => {
+    try {
+      // 테스트 할일 상태 초기화
+      await pool.query(
+        'UPDATE todo SET title = $1, startdate = $2, enddate = $3, iscompleted = $4, isdeleted = $5 WHERE userid = $6',
+        ['기존 할일 제목', '2025-01-01', '2025-01-10', false, false, testUser1.userid]
+      );
+    } catch (err) {
+      console.error('afterEach error:', err);
+    }
+  });
+
+  // 테스트 종료 후 사용자 정리
+  afterAll(async () => {
+    try {
+      if (testUser1) {
+        await pool.query('DELETE FROM "user" WHERE userid = $1', [testUser1.userid]);
+      }
+      if (testUser2) {
+        await pool.query('DELETE FROM "user" WHERE userid = $1', [testUser2.userid]);
+      }
+    } catch (err) {
+      console.error('afterAll error:', err);
+    }
+  });
+
+  // ========== A. 성공 케이스 (4개) ==========
+
+  test('1. 유효한 데이터로 할일 수정 성공', async () => {
+    const updateData = {
+      title: '수정된 할일 제목',
+      startDate: '2025-02-01',
+      endDate: '2025-02-10',
+    };
+
+    const response = await request(app)
+      .put(`/api/todos/${testTodo1.todoid}`)
+      .set('Authorization', `Bearer ${token1}`)
+      .send(updateData);
+
+    expect(response.status).toBe(200);
+    expect(response.body.status).toBe('success');
+    expect(response.body.data).toHaveProperty('todoId');
+    expect(response.body.data.title).toBe(updateData.title);
+    expect(response.body.data.startDate).toBe(updateData.startDate);
+    expect(response.body.data.endDate).toBe(updateData.endDate);
+    expect(response.body.data.userId).toBe(testUser1.userid);
+    expect(response.body.data.isCompleted).toBe(false); // 변경되지 않음
+    expect(response.body.data.isDeleted).toBe(false); // 변경되지 않음
+    expect(response.body.data.priority).toBe(1); // 변경되지 않음
+    expect(response.body.data.updatedAt).not.toEqual(response.body.data.createdAt); // updatedAt 업데이트 확인
+  });
+
+  test('2. 일부 필드만 수정 성공', async () => {
+    const updateData = {
+      title: '부분 수정된 제목',
+      // startDate는 수정하지 않음
+      endDate: '2025-03-10', // endDate만 수정
+    };
+
+    const response = await request(app)
+      .put(`/api/todos/${testTodo1.todoid}`)
+      .set('Authorization', `Bearer ${token1}`)
+      .send(updateData);
+
+    expect(response.status).toBe(200);
+    expect(response.body.status).toBe('success');
+    expect(response.body.data.title).toBe(updateData.title);
+    expect(response.body.data.startDate).toBe('2025-01-01'); // 원래 값 유지
+    expect(response.body.data.endDate).toBe(updateData.endDate);
+  });
+
+  test('3. 날짜 범위 유효한 수정 성공 (startDate === endDate)', async () => {
+    const updateData = {
+      startDate: '2025-02-15',
+      endDate: '2025-02-15', // 동일한 날짜
+    };
+
+    const response = await request(app)
+      .put(`/api/todos/${testTodo1.todoid}`)
+      .set('Authorization', `Bearer ${token1}`)
+      .send(updateData);
+
+    expect(response.status).toBe(200);
+    expect(response.body.status).toBe('success');
+    expect(response.body.data.startDate).toBe(updateData.startDate);
+    expect(response.body.data.endDate).toBe(updateData.endDate);
+  });
+
+  test('4. 제목만 수정 성공', async () => {
+    const updateData = {
+      title: '제목만 수정됨',
+    };
+
+    const response = await request(app)
+      .put(`/api/todos/${testTodo1.todoid}`)
+      .set('Authorization', `Bearer ${token1}`)
+      .send(updateData);
+
+    expect(response.status).toBe(200);
+    expect(response.body.status).toBe('success');
+    expect(response.body.data.title).toBe(updateData.title);
+    expect(response.body.data.startDate).toBe('2025-01-01'); // 원래 값 유지
+    expect(response.body.data.endDate).toBe('2025-01-10'); // 원래 값 유지
+  });
+
+  // ========== B. 인증 관련 (3개) ==========
+
+  test('5. 토큰 없이 요청 시 401 Unauthorized', async () => {
+    const updateData = {
+      title: '수정된 제목',
+    };
+
+    const response = await request(app)
+      .put(`/api/todos/${testTodo1.todoid}`)
+      .send(updateData);
+
+    expect(response.status).toBe(401);
+    expect(response.body.status).toBe('error');
+    expect(response.body.errorCode).toBe('MISSING_AUTH_HEADER');
+  });
+
+  test('6. 잘못된 토큰으로 요청 시 401 Unauthorized', async () => {
+    const updateData = {
+      title: '수정된 제목',
+    };
+
+    const response = await request(app)
+      .put(`/api/todos/${testTodo1.todoid}`)
+      .set('Authorization', 'Bearer invalid.token.here')
+      .send(updateData);
+
+    expect(response.status).toBe(401);
+    expect(response.body.status).toBe('error');
+    expect(response.body.errorCode).toBe('INVALID_TOKEN');
+  });
+
+  test('7. 다른 사용자의 할일 수정 시도 - 403 Forbidden', async () => {
+    const updateData = {
+      title: '수정된 제목',
+    };
+
+    const response = await request(app)
+      .put(`/api/todos/${testTodo2.todoid}`) // testUser2의 할일
+      .set('Authorization', `Bearer ${token1}`) // testUser1 토큰
+      .send(updateData);
+
+    expect(response.status).toBe(403);
+    expect(response.body.status).toBe('error');
+    expect(response.body.errorCode).toBe('FORBIDDEN');
+    expect(response.body.message).toBe('You do not have permission to access this resource');
+  });
+
+  // ========== C. 존재하지 않는 할일 (2개) ==========
+
+  test('8. 존재하지 않는 할일 ID로 수정 시도 - 404 Not Found', async () => {
+    const fakeTodoId = '11111111-1111-1111-1111-111111111111';
+    const updateData = {
+      title: '수정된 제목',
+    };
+
+    const response = await request(app)
+      .put(`/api/todos/${fakeTodoId}`)
+      .set('Authorization', `Bearer ${token1}`)
+      .send(updateData);
+
+    expect(response.status).toBe(404);
+    expect(response.body.status).toBe('error');
+    expect(response.body.errorCode).toBe('NOT_FOUND');
+    expect(response.body.message).toBe('Todo not found');
+  });
+
+  test('9. 다른 사용자의 존재하는 할일 접근 - 403 Forbidden (not 404)', async () => {
+    const updateData = {
+      title: '수정된 제목',
+    };
+
+    const response = await request(app)
+      .put(`/api/todos/${testTodo2.todoid}`) // testUser2의 할일
+      .set('Authorization', `Bearer ${token1}`) // testUser1 토큰
+      .send(updateData);
+
+    expect(response.status).toBe(403);
+    expect(response.body.status).toBe('error');
+    expect(response.body.errorCode).toBe('FORBIDDEN');
+    expect(response.body.message).toBe('You do not have permission to access this resource');
+  });
+
+  // ========== D. 삭제된 할일 수정 (1개) ==========
+
+  test('10. 삭제된(휴지통) 할일 수정 시도 - 400 Bad Request', async () => {
+    // 테스트용 삭제된 할일 생성
+    const deletedTodoResult = await pool.query(
+      'INSERT INTO todo (userid, title, startdate, enddate, priority, iscompleted, isdeleted, deletedat) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *',
+      [testUser1.userid, '삭제된 할일', '2025-01-01', '2025-01-10', 2, false, true, new Date()]
+    );
+    const deletedTodo = deletedTodoResult.rows[0];
+
+    const updateData = {
+      title: '수정된 제목',
+    };
+
+    const response = await request(app)
+      .put(`/api/todos/${deletedTodo.todoid}`)
+      .set('Authorization', `Bearer ${token1}`)
+      .send(updateData);
+
+    expect(response.status).toBe(400);
+    expect(response.body.status).toBe('error');
+    expect(response.body.errorCode).toBe('BAD_REQUEST');
+    expect(response.body.message).toBe('Cannot modify a deleted todo');
+  });
+
+  // ========== E. 필드 검증 (3개) ==========
+
+  test('11. 제목이 501자 초과 시 400 Bad Request', async () => {
+    const updateData = {
+      title: 'A'.repeat(501), // 501자
+    };
+
+    const response = await request(app)
+      .put(`/api/todos/${testTodo1.todoid}`)
+      .set('Authorization', `Bearer ${token1}`)
+      .send(updateData);
+
+    expect(response.status).toBe(400);
+    expect(response.body.status).toBe('error');
+    expect(response.body.errorCode).toBe('INVALID_TITLE');
+  });
+
+  test('12. 잘못된 날짜 형식 (YYYY-MM-DD 아님) - 400 Bad Request', async () => {
+    const updateData = {
+      startDate: '2025/11/26', // 슬래시 형식
+    };
+
+    const response = await request(app)
+      .put(`/api/todos/${testTodo1.todoid}`)
+      .set('Authorization', `Bearer ${token1}`)
+      .send(updateData);
+
+    expect(response.status).toBe(400);
+    expect(response.body.status).toBe('error');
+    expect(response.body.errorCode).toBe('INVALID_DATE');
+  });
+
+  test('13. 시작일 > 종료일인 경우 - 400 Bad Request (BR-001)', async () => {
+    const updateData = {
+      startDate: '2025-12-31',
+      endDate: '2025-11-26', // 종료일이 시작일보다 이전
+    };
+
+    const response = await request(app)
+      .put(`/api/todos/${testTodo1.todoid}`)
+      .set('Authorization', `Bearer ${token1}`)
+      .send(updateData);
+
+    expect(response.status).toBe(400);
+    expect(response.body.status).toBe('error');
+    expect(response.body.errorCode).toBe('INVALID_DATE_RANGE');
+    expect(response.body.message).toBe('Start date must be before or equal to end date');
+  });
+});
+
 // 모든 테스트 종료 후 DB 연결 종료
 afterAll(async () => {
-  await pool.end();
+  if (pool._clients) {
+    await pool.end(); // pool이 아직 열려있지 않으면 무시
+  }
 });
