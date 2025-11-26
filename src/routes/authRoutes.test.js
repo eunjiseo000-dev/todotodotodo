@@ -485,3 +485,349 @@ describe('POST /api/auth/signup - 회원가입 API', () => {
     expect(response.status).toBe(400);
   });
 });
+
+// ========== POST /api/auth/login 로그인 API 테스트 ==========
+
+describe('POST /api/auth/login - 로그인 API', () => {
+  // 테스트용 계정 생성
+  const testUser = {
+    email: `test-login-${Math.random()}@example.com`,
+    password: 'TestPassword123!',
+    name: 'Login Test User',
+  };
+
+  beforeAll(async () => {
+    // 테스트용 계정 미리 생성
+    await request(app)
+      .post('/api/auth/signup')
+      .send(testUser);
+  });
+
+  afterAll(async () => {
+    try {
+      await pool.query('DELETE FROM "user" WHERE email LIKE $1', ['%test-login%']);
+    } catch (err) {
+      // 에러 무시
+    }
+  });
+
+  // ========== 성공 케이스 ==========
+
+  test('유효한 이메일과 비밀번호로 로그인 성공', async () => {
+    const response = await request(app)
+      .post('/api/auth/login')
+      .send({
+        email: testUser.email,
+        password: testUser.password,
+      });
+
+    expect(response.status).toBe(200);
+    expect(response.body.status).toBe('success');
+    expect(response.body.data).toHaveProperty('token');
+    expect(response.body.data).toHaveProperty('user');
+    expect(response.body.data.user.userId).toBeDefined();
+    expect(response.body.data.user.email).toBe(testUser.email);
+    expect(response.body.data.user.name).toBe(testUser.name);
+  });
+
+  test('토큰은 JWT 형식이어야 함', async () => {
+    const response = await request(app)
+      .post('/api/auth/login')
+      .send({
+        email: testUser.email,
+        password: testUser.password,
+      });
+
+    const token = response.body.data.token;
+
+    // JWT 형식: header.payload.signature
+    const parts = token.split('.');
+    expect(parts.length).toBe(3);
+    expect(parts[0]).toBeDefined();
+    expect(parts[1]).toBeDefined();
+    expect(parts[2]).toBeDefined();
+  });
+
+  // ========== 필수 필드 검증 ==========
+
+  test('이메일 누락 시 400 에러', async () => {
+    const response = await request(app)
+      .post('/api/auth/login')
+      .send({
+        password: testUser.password,
+      });
+
+    expect(response.status).toBe(400);
+    expect(response.body.status).toBe('error');
+    expect(response.body.errorCode).toBe('MISSING_FIELDS');
+  });
+
+  test('비밀번호 누락 시 400 에러', async () => {
+    const response = await request(app)
+      .post('/api/auth/login')
+      .send({
+        email: testUser.email,
+      });
+
+    expect(response.status).toBe(400);
+    expect(response.body.status).toBe('error');
+    expect(response.body.errorCode).toBe('MISSING_FIELDS');
+  });
+
+  test('빈 이메일로 로그인 시도', async () => {
+    const response = await request(app)
+      .post('/api/auth/login')
+      .send({
+        email: '',
+        password: testUser.password,
+      });
+
+    expect(response.status).toBe(400);
+    expect(response.body.errorCode).toMatch(/MISSING_FIELDS|INVALID_CREDENTIALS/);
+  });
+
+  test('빈 비밀번호로 로그인 시도', async () => {
+    const response = await request(app)
+      .post('/api/auth/login')
+      .send({
+        email: testUser.email,
+        password: '',
+      });
+
+    expect(response.status).toBe(400);
+    expect(response.body.errorCode).toMatch(/MISSING_FIELDS|INVALID_CREDENTIALS/);
+  });
+
+  // ========== 인증 실패 케이스 ==========
+
+  test('존재하지 않는 이메일로 로그인 시도', async () => {
+    const response = await request(app)
+      .post('/api/auth/login')
+      .send({
+        email: 'nonexistent@example.com',
+        password: testUser.password,
+      });
+
+    expect(response.status).toBe(401);
+    expect(response.body.status).toBe('error');
+    expect(response.body.errorCode).toBe('INVALID_CREDENTIALS');
+    expect(response.body.message).toBe('Invalid email or password');
+  });
+
+  test('잘못된 비밀번호로 로그인 시도', async () => {
+    const response = await request(app)
+      .post('/api/auth/login')
+      .send({
+        email: testUser.email,
+        password: 'WrongPassword123!',
+      });
+
+    expect(response.status).toBe(401);
+    expect(response.body.status).toBe('error');
+    expect(response.body.errorCode).toBe('INVALID_CREDENTIALS');
+  });
+
+  test('비밀번호가 비슷하지만 다른 경우 실패', async () => {
+    const response = await request(app)
+      .post('/api/auth/login')
+      .send({
+        email: testUser.email,
+        password: 'TestPassword124!', // 마지막 숫자 다름
+      });
+
+    expect(response.status).toBe(401);
+    expect(response.body.errorCode).toBe('INVALID_CREDENTIALS');
+  });
+
+  test('계정 존재 여부 노출 방지 (존재하지 않음, 비밀번호 틀림)', async () => {
+    // 존재하지 않는 이메일로 시도
+    const response1 = await request(app)
+      .post('/api/auth/login')
+      .send({
+        email: 'nonexistent@example.com',
+        password: 'AnyPassword123!',
+      });
+
+    // 잘못된 비밀번호로 시도
+    const response2 = await request(app)
+      .post('/api/auth/login')
+      .send({
+        email: testUser.email,
+        password: 'WrongPassword123!',
+      });
+
+    // 둘 다 401 + 동일한 에러 메시지
+    expect(response1.status).toBe(401);
+    expect(response2.status).toBe(401);
+    expect(response1.body.message).toBe(response2.body.message);
+    expect(response1.body.errorCode).toBe(response2.body.errorCode);
+  });
+
+  // ========== 응답 형식 검증 ==========
+
+  test('성공 응답이 필수 필드 포함', async () => {
+    const response = await request(app)
+      .post('/api/auth/login')
+      .send({
+        email: testUser.email,
+        password: testUser.password,
+      });
+
+    expect(response.status).toBe(200);
+    expect(response.body).toHaveProperty('status', 'success');
+    expect(response.body).toHaveProperty('message');
+    expect(response.body).toHaveProperty('data');
+    expect(response.body.data).toHaveProperty('token');
+    expect(response.body.data).toHaveProperty('user');
+    expect(response.body.data.user).toHaveProperty('userId');
+    expect(response.body.data.user).toHaveProperty('email');
+    expect(response.body.data.user).toHaveProperty('name');
+  });
+
+  test('에러 응답이 필수 필드 포함', async () => {
+    const response = await request(app)
+      .post('/api/auth/login')
+      .send({
+        email: 'nonexistent@example.com',
+        password: 'anypassword',
+      });
+
+    expect(response.status).toBe(401);
+    expect(response.body).toHaveProperty('status', 'error');
+    expect(response.body).toHaveProperty('message');
+    expect(response.body).toHaveProperty('errorCode');
+  });
+
+  // ========== 대소문자 처리 ==========
+
+  test('이메일 대소문자 불일치 처리', async () => {
+    const response = await request(app)
+      .post('/api/auth/login')
+      .send({
+        email: testUser.email.toUpperCase(),
+        password: testUser.password,
+      });
+
+    // 데이터베이스 설정에 따라 실패할 수 있음
+    expect([200, 401]).toContain(response.status);
+  });
+
+  // ========== 추가 필드 무시 ==========
+
+  test('추가 필드는 무시되고 로그인 성공', async () => {
+    const response = await request(app)
+      .post('/api/auth/login')
+      .send({
+        email: testUser.email,
+        password: testUser.password,
+        extraField1: 'should be ignored',
+        extraField2: 12345,
+      });
+
+    expect(response.status).toBe(200);
+    expect(response.body.status).toBe('success');
+  });
+
+  // ========== 연속 로그인 테스트 ==========
+
+  test('동일한 계정으로 여러 번 로그인 가능', async () => {
+    const response1 = await request(app)
+      .post('/api/auth/login')
+      .send({
+        email: testUser.email,
+        password: testUser.password,
+      });
+
+    // 약간의 지연 후 두 번째 로그인 (다른 timestamp 보장)
+    await new Promise(resolve => setTimeout(resolve, 100));
+
+    const response2 = await request(app)
+      .post('/api/auth/login')
+      .send({
+        email: testUser.email,
+        password: testUser.password,
+      });
+
+    expect(response1.status).toBe(200);
+    expect(response2.status).toBe(200);
+    // 두 토큰이 모두 유효한 JWT 형식이어야 함
+    expect(response1.body.data.token).toBeDefined();
+    expect(response2.body.data.token).toBeDefined();
+    // 둘 다 JWT 형식
+    expect(response1.body.data.token.split('.').length).toBe(3);
+    expect(response2.body.data.token.split('.').length).toBe(3);
+  });
+
+  // ========== null 값 처리 ==========
+
+  test('null 값이 포함된 요청 처리', async () => {
+    const response = await request(app)
+      .post('/api/auth/login')
+      .send({
+        email: null,
+        password: null,
+      });
+
+    expect(response.status).toBe(400);
+  });
+
+  test('특수 문자가 포함된 비밀번호로 로그인', async () => {
+    const specialPassword = 'Sp3c!@l$P@ss%w0rd';
+    const specialUser = {
+      email: `test-login-special-${Math.random()}@example.com`,
+      password: specialPassword,
+      name: 'Special User',
+    };
+
+    // 먼저 계정 생성
+    const signupResponse = await request(app)
+      .post('/api/auth/signup')
+      .send(specialUser);
+
+    expect(signupResponse.status).toBe(201);
+
+    // 로그인 시도
+    const loginResponse = await request(app)
+      .post('/api/auth/login')
+      .send({
+        email: specialUser.email,
+        password: specialPassword,
+      });
+
+    expect(loginResponse.status).toBe(200);
+    expect(loginResponse.body.data).toHaveProperty('token');
+  });
+
+  // ========== 타이밍 공격 방어 검증 ==========
+
+  test('존재하지 않는 계정과 잘못된 비밀번호의 응답 시간이 유사해야 함', async () => {
+    const startTime1 = Date.now();
+
+    const response1 = await request(app)
+      .post('/api/auth/login')
+      .send({
+        email: 'nonexistent-user@example.com',
+        password: 'SomePassword123!',
+      });
+
+    const duration1 = Date.now() - startTime1;
+
+    const startTime2 = Date.now();
+
+    const response2 = await request(app)
+      .post('/api/auth/login')
+      .send({
+        email: testUser.email,
+        password: 'WrongPassword123!',
+      });
+
+    const duration2 = Date.now() - startTime2;
+
+    // 둘 다 401 에러
+    expect(response1.status).toBe(401);
+    expect(response2.status).toBe(401);
+
+    // 응답 시간의 차이가 크지 않아야 함 (500ms 이내 차이 허용)
+    expect(Math.abs(duration1 - duration2)).toBeLessThan(500);
+  });
+});

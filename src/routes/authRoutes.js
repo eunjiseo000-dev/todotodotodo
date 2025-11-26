@@ -126,7 +126,16 @@ router.post('/login', async (req, res) => {
       });
     }
 
-    // 2. 이메일로 사용자 조회
+    // 2. 이메일 형식 검증
+    if (!validateEmail(email)) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'Invalid email format',
+        errorCode: 'INVALID_EMAIL',
+      });
+    }
+
+    // 3. 이메일로 사용자 조회
     const result = await pool.query(
       'SELECT userid, email, name, passwordhash FROM "user" WHERE email = $1',
       [email]
@@ -136,7 +145,7 @@ router.post('/login', async (req, res) => {
     let isPasswordValid = false;
 
     if (user) {
-      // 3. 비밀번호 비교
+      // 4. 비밀번호 비교
       isPasswordValid = await comparePassword(password, user.passwordhash);
     } else {
       // 타이밍 공격 방어: 존재하지 않는 사용자도 더미 해시와 비교
@@ -152,10 +161,10 @@ router.post('/login', async (req, res) => {
       });
     }
 
-    // 4. JWT 토큰 생성
+    // 5. JWT 토큰 생성
     const token = generateToken(user.userid);
 
-    // 5. 응답 반환
+    // 6. 응답 반환
     res.status(200).json({
       status: 'success',
       message: 'Login successful',
