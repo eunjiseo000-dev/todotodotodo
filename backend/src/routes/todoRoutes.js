@@ -744,6 +744,83 @@ router.patch('/:id/complete', authMiddleware, async (req, res) => {
   }
 });
 
+// DELETE /api/todos/:id/permanent - 할일 영구삭제
+router.delete('/:id/permanent', authMiddleware, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const todoId = req.params.id;
+
+    // 1. 할일 존재 여부 확인 및 사용자 권한 검증
+    const findTodoQuery = `
+      SELECT
+        todoid,
+        userid,
+        isdeleted
+      FROM todo
+      WHERE todoid = $1
+    `;
+    const findTodoResult = await pool.query(findTodoQuery, [todoId]);
+
+    if (findTodoResult.rows.length === 0) {
+      return res.status(404).json({
+        status: 'error',
+        message: 'Todo not found',
+        errorCode: 'NOT_FOUND',
+      });
+    }
+
+    const todo = findTodoResult.rows[0];
+
+    // 2. 사용자 권한 확인 (자신의 할일만 영구삭제 가능)
+    if (todo.userid !== userId) {
+      return res.status(403).json({
+        status: 'error',
+        message: 'You do not have permission to access this resource',
+        errorCode: 'FORBIDDEN',
+      });
+    }
+
+    // 3. 삭제된 할일인지 확인 (isDeleted=false인 할일은 영구삭제 불가)
+    if (!todo.isdeleted) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'Cannot permanently delete a non-deleted todo',
+        errorCode: 'BAD_REQUEST',
+      });
+    }
+
+    // 4. 데이터베이스에서 물리적 삭제
+    const deleteQuery = `
+      DELETE FROM todo
+      WHERE todoid = $1 AND userid = $2 AND isdeleted = true
+    `;
+
+    const deleteResult = await pool.query(deleteQuery, [todoId, userId]);
+
+    if (deleteResult.rowCount === 0) {
+      // 조건에 맞는 행이 없는 경우 (이론적으로는 발생할 수 없음)
+      return res.status(404).json({
+        status: 'error',
+        message: 'Todo not found',
+        errorCode: 'NOT_FOUND',
+      });
+    }
+
+    // 5. 응답 반환
+    res.status(200).json({
+      status: 'success',
+      message: 'Todo permanently deleted successfully',
+    });
+  } catch (err) {
+    console.error('Permanent delete todo error:', err);
+    res.status(500).json({
+      status: 'error',
+      message: 'Internal server error',
+      errorCode: 'INTERNAL_ERROR',
+    });
+  }
+});
+
 // PATCH /api/todos/:id/priority - 할일 우선순위 변경
 router.patch('/:id/priority', authMiddleware, async (req, res) => {
   try {
