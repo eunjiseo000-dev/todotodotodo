@@ -75,7 +75,7 @@ export const AuthProvider = ({ children }) => {
       toast.success('로그인되었습니다.');
       return { success: true };
     } catch (err) {
-      const message = err.response?.data?.message || '로그인에 실패했습니다.';
+      const message = '아이디, 비밀번호를 확인해주세요.';
       setError(message);
       toast.error(message);
       return { success: false, error: message };
