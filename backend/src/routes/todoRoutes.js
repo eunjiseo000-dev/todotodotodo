@@ -744,4 +744,170 @@ router.patch('/:id/complete', authMiddleware, async (req, res) => {
   }
 });
 
+// PATCH /api/todos/:id/priority - 할일 우선순위 변경
+router.patch('/:id/priority', authMiddleware, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const todoId = req.params.id;
+    const { priority: newPriority } = req.body;
+
+    // 1. 요청 바디 검증
+    if (newPriority === undefined || newPriority === null) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'Priority is required',
+        errorCode: 'MISSING_FIELDS',
+      });
+    }
+
+    // 2. 우선순위 범위 검증
+    if (typeof newPriority !== 'number' || newPriority <= 0) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'Priority must be a number greater than 0',
+        errorCode: 'INVALID_PRIORITY',
+      });
+    }
+
+    if (newPriority > 999999) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'Priority exceeds maximum allowed value',
+        errorCode: 'INVALID_PRIORITY',
+      });
+    }
+
+    // 3. 할일 존재 여부 확인 및 사용자 권한 검증
+    const findTodoQuery = `
+      SELECT
+        todoid,
+        userid,
+        priority,
+        isdeleted
+      FROM todo
+      WHERE todoid = $1 AND isdeleted = false
+    `;
+    const findTodoResult = await pool.query(findTodoQuery, [todoId]);
+
+    if (findTodoResult.rows.length === 0) {
+      return res.status(404).json({
+        status: 'error',
+        message: 'Todo not found',
+        errorCode: 'NOT_FOUND',
+      });
+    }
+
+    const todo = findTodoResult.rows[0];
+
+    // 4. 사용자 권한 확인 (자신의 할일만 변경 가능)
+    if (todo.userid !== userId) {
+      return res.status(403).json({
+        status: 'error',
+        message: 'You do not have permission to access this resource',
+        errorCode: 'FORBIDDEN',
+      });
+    }
+
+    // 트랜잭션 시작: 변경하려는 우선순위와 같은 우선순위를 가진 다른 할일들의 우선순위를 조정
+    const client = await pool.connect();
+
+    try {
+      await client.query('BEGIN');
+
+      if (newPriority < todo.priority) {
+        // 새로운 우선순위가 현재보다 작을 때 (즉, 앞으로 이동)
+        // 기존 우선순위 이전에서 새로운 우선순위까지에 있는 항목들을 하나씩 밀어냄
+        await client.query(`
+          UPDATE todo
+          SET priority = priority + 1, updatedat = NOW()
+          WHERE userid = $1
+            AND isdeleted = false
+            AND priority >= $2
+            AND priority < $3
+        `, [userId, newPriority, todo.priority]);
+      } else if (newPriority > todo.priority) {
+        // 새로운 우선순위가 현재보다 클 때 (즉, 뒤로 이동)
+        // 현재 우선순위 이후에서 새로운 우선순위 이전에 있는 항목들을 하나씩 당겨옴
+        await client.query(`
+          UPDATE todo
+          SET priority = priority - 1, updatedat = NOW()
+          WHERE userid = $1
+            AND isdeleted = false
+            AND priority > $2
+            AND priority <= $3
+        `, [userId, todo.priority, newPriority]);
+      }
+
+      // 5. 변경된 항목의 우선순위 업데이트
+      const updateQuery = `
+        UPDATE todo
+        SET
+          priority = $1,
+          updatedat = NOW()
+        WHERE todoid = $2 AND userid = $3
+        RETURNING
+          todoid,
+          userid,
+          title,
+          startdate,
+          enddate,
+          priority,
+          iscompleted,
+          isdeleted,
+          createdat,
+          updatedat,
+          deletedat
+      `;
+
+      const updateResult = await client.query(updateQuery, [newPriority, todoId, userId]);
+
+      // 6. 업데이트된 할일 객체 변환 (camelCase로)
+      const updatedRow = updateResult.rows[0];
+      const formatDate = (date) => {
+        if (!date) return null;
+        const d = new Date(date);
+        const year = d.getFullYear();
+        const month = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+      };
+
+      const reorderedTodo = {
+        todoId: updatedRow.todoid,
+        userId: updatedRow.userid,
+        title: updatedRow.title,
+        startDate: formatDate(updatedRow.startdate),
+        endDate: formatDate(updatedRow.enddate),
+        priority: updatedRow.priority,
+        isCompleted: updatedRow.iscompleted,
+        isDeleted: updatedRow.isdeleted,
+        createdAt: updatedRow.createdat,
+        updatedAt: updatedRow.updatedat,
+        deletedAt: updatedRow.deletedat,
+      };
+
+      await client.query('COMMIT');
+
+      // 7. 응답 반환
+      res.status(200).json({
+        status: 'success',
+        message: 'Todo priority updated successfully',
+        data: reorderedTodo,
+      });
+    } catch (txErr) {
+      await client.query('ROLLBACK');
+      throw txErr;
+    } finally {
+      client.release();
+    }
+  } catch (err) {
+    console.error('Reorder todo error:', err);
+    res.status(500).json({
+      status: 'error',
+      message: 'Internal server error',
+      errorCode: 'INTERNAL_ERROR',
+    });
+  }
+});
+
 module.exports = router;

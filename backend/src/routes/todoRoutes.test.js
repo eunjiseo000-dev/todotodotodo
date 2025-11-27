@@ -1576,6 +1576,267 @@ describe('PATCH /api/todos/{id}/complete - 할일 완료 처리 API', () => {
   });
 });
 
+// ========================================================================
+// PATCH /api/todos/{id}/priority - 할일 우선순위 변경 API 테스트
+// ========================================================================
+
+describe('PATCH /api/todos/{id}/priority - 할일 우선순위 변경 API', () => {
+  let testUser1;
+  let testUser2;
+  let token1;
+  let token2;
+  let todoList;
+  let testTodo2;
+
+  // 테스트 사용자 생성
+  beforeAll(async () => {
+    try {
+      // 테스트 사용자 1 생성
+      const user1Result = await pool.query(
+        'INSERT INTO "user" (email, passwordhash, name) VALUES ($1, $2, $3) RETURNING userid, email, name',
+        [
+          `test-reorder-user1-${Date.now()}@example.com`,
+          '$2b$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcg7b3XeKeUxWdeS86E36gZvWFm', // dummy hash
+          'Test Reorder User 1',
+        ]
+      );
+      testUser1 = user1Result.rows[0];
+      token1 = generateToken(testUser1.userid);
+
+      // 테스트 사용자 2 생성 (다른 사용자 데이터 격리 테스트용)
+      const user2Result = await pool.query(
+        'INSERT INTO "user" (email, passwordhash, name) VALUES ($1, $2, $3) RETURNING userid, email, name',
+        [
+          `test-reorder-user2-${Date.now()}@example.com`,
+          '$2b$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcg7b3XeKeUxWdeS86E36gZvWFm',
+          'Test Reorder User 2',
+        ]
+      );
+      testUser2 = user2Result.rows[0];
+      token2 = generateToken(testUser2.userid);
+
+      // 테스트용 할일 목록 생성 (우선순위를 테스트하기 위해 여러 개 생성)
+      const todoData = [
+        { title: '할일 1', priority: 1 },
+        { title: '할일 2', priority: 2 },
+        { title: '할일 3', priority: 3 },
+        { title: '할일 4', priority: 4 },
+      ];
+
+      todoList = [];
+      for (const todo of todoData) {
+        const result = await pool.query(
+          'INSERT INTO todo (userid, title, startdate, enddate, priority, iscompleted, isdeleted) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *',
+          [testUser1.userid, todo.title, '2025-01-01', '2025-01-10', todo.priority, false, false]
+        );
+        todoList.push(result.rows[0]);
+      }
+
+      // 다른 사용자의 할일 생성 (권한 테스트용)
+      const todo2Result = await pool.query(
+        'INSERT INTO todo (userid, title, startdate, enddate, priority, iscompleted, isdeleted) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *',
+        [testUser2.userid, '다른 사용자 할일', '2025-01-01', '2025-01-10', 1, false, false]
+      );
+      testTodo2 = todo2Result.rows[0];
+    } catch (err) {
+      console.error('beforeAll error:', err);
+    }
+  });
+
+  // 각 테스트 후 테스트 데이터 정리
+  afterEach(async () => {
+    try {
+      // 우선순위가 변경되었을 수 있으므로, 테스트 전 상태로 되돌림
+      for (let i = 0; i < todoList.length; i++) {
+        await pool.query(
+          'UPDATE todo SET priority = $1 WHERE todoid = $2',
+          [i+1, todoList[i].todoid]
+        );
+      }
+    } catch (err) {
+      console.error('afterEach error:', err);
+    }
+  });
+
+  // 테스트 종료 후 사용자 및 할일 정리
+  afterAll(async () => {
+    try {
+      if (testUser1) {
+        await pool.query('DELETE FROM todo WHERE userid = $1', [testUser1.userid]);
+        await pool.query('DELETE FROM "user" WHERE userid = $1', [testUser1.userid]);
+      }
+      if (testUser2) {
+        await pool.query('DELETE FROM todo WHERE userid = $1', [testUser2.userid]);
+        await pool.query('DELETE FROM "user" WHERE userid = $1', [testUser2.userid]);
+      }
+    } catch (err) {
+      console.error('afterAll error:', err);
+    }
+  });
+
+  // ========== A. 성공 케이스 (3개) ==========
+
+  test('1. 유효한 할일 ID와 우선순위로 우선순위 변경 성공', async () => {
+    const newPriority = 1;
+    const todoToReorder = todoList[2]; // 기존 priority 3인 할일
+
+    const response = await request(app)
+      .patch(`/api/todos/${todoToReorder.todoid}/priority`)
+      .set('Authorization', `Bearer ${token1}`)
+      .send({ priority: newPriority });
+
+    expect(response.status).toBe(200);
+    expect(response.body.status).toBe('success');
+    expect(response.body.data).toHaveProperty('todoId');
+    expect(response.body.data.priority).toBe(newPriority);
+    expect(response.body.data.title).toBe(todoToReorder.title);
+  });
+
+  test('2. 우선순위 변경 후 다른 할일의 우선순위도 조정됨', async () => {
+    const todoToMoveToTop = todoList[2]; // 기존 priority 3인 할일
+    const originalTopPriority = 1;
+
+    // 우선순위 1로 변경 (기존 1, 2는 밀려나야 함)
+    const response = await request(app)
+      .patch(`/api/todos/${todoToMoveToTop.todoid}/priority`)
+      .set('Authorization', `Bearer ${token1}`)
+      .send({ priority: originalTopPriority });
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.priority).toBe(originalTopPriority);
+
+    // 변경 후 DB에서 우선순위를 다시 확인
+    const checkResponse = await request(app)
+      .get('/api/todos')
+      .set('Authorization', `Bearer ${token1}`);
+
+    expect(checkResponse.status).toBe(200);
+    const todos = checkResponse.body.data.todos;
+
+    // 우선순위별로 정렬된 상태를 확인
+    const reorderedTodo = todos.find(todo => todo.todoId === todoToMoveToTop.todoid);
+    expect(reorderedTodo.priority).toBe(1);
+
+    // 나머지 할일들이 밀려난 우선순위를 가져야 함
+    const otherTodos = todos.filter(todo => todo.todoId !== todoToMoveToTop.todoid);
+    const orderedPriorities = otherTodos.sort((a, b) => a.priority - b.priority).map(todo => todo.priority);
+    expect(orderedPriorities).toEqual([2, 3, 4]); // 기존 1, 2, 4가 2, 3, 4로 밀림
+  });
+
+  test('3. 마지막 우선순위로 이동', async () => {
+    const todoToMoveToEnd = todoList[0]; // 기존 priority 1인 할일
+    const newPriority = 4;
+
+    const response = await request(app)
+      .patch(`/api/todos/${todoToMoveToEnd.todoid}/priority`)
+      .set('Authorization', `Bearer ${token1}`)
+      .send({ priority: newPriority });
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.priority).toBe(newPriority);
+
+    // 변경 후 DB에서 우선순위를 다시 확인
+    const checkResponse = await request(app)
+      .get('/api/todos')
+      .set('Authorization', `Bearer ${token1}`);
+
+    expect(checkResponse.status).toBe(200);
+    const todos = checkResponse.body.data.todos;
+
+    const reorderedTodo = todos.find(todo => todo.todoId === todoToMoveToEnd.todoid);
+    expect(reorderedTodo.priority).toBe(newPriority);
+  });
+
+  // ========== B. 인증 관련 (3개) ==========
+
+  test('4. 토큰 없이 요청 시 401 Unauthorized', async () => {
+    const response = await request(app)
+      .patch(`/api/todos/${todoList[0].todoid}/priority`)
+      .send({ priority: 2 });
+
+    expect(response.status).toBe(401);
+    expect(response.body.status).toBe('error');
+    expect(response.body.errorCode).toBe('MISSING_AUTH_HEADER');
+  });
+
+  test('5. 잘못된 토큰으로 요청 시 401 Unauthorized', async () => {
+    const response = await request(app)
+      .patch(`/api/todos/${todoList[0].todoid}/priority`)
+      .set('Authorization', 'Bearer invalid.token.here')
+      .send({ priority: 2 });
+
+    expect(response.status).toBe(401);
+    expect(response.body.status).toBe('error');
+    expect(response.body.errorCode).toBe('INVALID_TOKEN');
+  });
+
+  test('6. 다른 사용자의 할일 우선순위 변경 시도 - 403 Forbidden', async () => {
+    const response = await request(app)
+      .patch(`/api/todos/${testTodo2.todoid}/priority`) // testUser2의 할일
+      .set('Authorization', `Bearer ${token1}`) // testUser1 토큰
+      .send({ priority: 2 });
+
+    expect(response.status).toBe(403);
+    expect(response.body.status).toBe('error');
+    expect(response.body.errorCode).toBe('FORBIDDEN');
+    expect(response.body.message).toBe('You do not have permission to access this resource');
+  });
+
+  // ========== C. 존재하지 않는 할일 (2개) ==========
+
+  test('7. 존재하지 않는 할일 ID로 우선순위 변경 시도 - 404 Not Found', async () => {
+    const fakeTodoId = '11111111-1111-1111-1111-111111111111';
+
+    const response = await request(app)
+      .patch(`/api/todos/${fakeTodoId}/priority`)
+      .set('Authorization', `Bearer ${token1}`)
+      .send({ priority: 2 });
+
+    expect(response.status).toBe(404);
+    expect(response.body.status).toBe('error');
+    expect(response.body.errorCode).toBe('NOT_FOUND');
+    expect(response.body.message).toBe('Todo not found');
+  });
+
+  // ========== D. 잘못된 요청 (3개) ==========
+
+  test('8. 요청 바디에 priority 누락 시 400 Bad Request', async () => {
+    const response = await request(app)
+      .patch(`/api/todos/${todoList[0].todoid}/priority`)
+      .set('Authorization', `Bearer ${token1}`)
+      .send({}); // priority 필드 없음
+
+    expect(response.status).toBe(400);
+    expect(response.body.status).toBe('error');
+    expect(response.body.errorCode).toBe('MISSING_FIELDS');
+    expect(response.body.message).toContain('Priority is required');
+  });
+
+  test('9. priority가 0 이하일 경우 400 Bad Request', async () => {
+    const response = await request(app)
+      .patch(`/api/todos/${todoList[0].todoid}/priority`)
+      .set('Authorization', `Bearer ${token1}`)
+      .send({ priority: 0 }); // 0은 유효하지 않음
+
+    expect(response.status).toBe(400);
+    expect(response.body.status).toBe('error');
+    expect(response.body.errorCode).toBe('INVALID_PRIORITY');
+    expect(response.body.message).toContain('Priority must be a number greater than 0');
+  });
+
+  test('10. priority가 너무 클 경우 (예: 999999 초과) 400 Bad Request', async () => {
+    const response = await request(app)
+      .patch(`/api/todos/${todoList[0].todoid}/priority`)
+      .set('Authorization', `Bearer ${token1}`)
+      .send({ priority: 1000000 }); // 최대치 초과
+
+    expect(response.status).toBe(400);
+    expect(response.body.status).toBe('error');
+    expect(response.body.errorCode).toBe('INVALID_PRIORITY');
+    expect(response.body.message).toContain('Priority exceeds maximum allowed value');
+  });
+});
+
 // 모든 테스트 종료 후 DB 연결 종료
 afterAll(async () => {
   if (pool._clients) {
