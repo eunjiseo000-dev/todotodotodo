@@ -2,6 +2,7 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
+const errorHandler = require('./utils/errorHandler');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -36,15 +37,8 @@ app.use((req, res) => {
   });
 });
 
-// 에러 핸들러 (기본)
-app.use((err, req, res, next) => {
-  console.error('Error:', err);
-  res.status(err.status || 500).json({
-    status: 'error',
-    message: err.message || 'Internal Server Error',
-    ...(process.env.NODE_ENV === 'development' && { stack: err.stack }),
-  });
-});
+// 에러 핸들러 (전역)
+app.use(errorHandler);
 
 // 서버 시작 (테스트 환경에서는 skip)
 if (process.env.NODE_ENV !== 'test') {

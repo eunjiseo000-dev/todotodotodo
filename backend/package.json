@@ -16,7 +16,11 @@
     "type": "git",
     "url": "git+https://github.com/eunjiseo000-dev/todotodotodo.git"
   },
-  "keywords": ["todo", "task", "management"],
+  "keywords": [
+    "todo",
+    "task",
+    "management"
+  ],
   "author": "",
   "license": "ISC",
   "type": "commonjs",
@@ -28,15 +32,16 @@
   },
   "homepage": "https://github.com/eunjiseo000-dev/todotodotodo#readme",
   "dependencies": {
-    "express": "^4.18.2",
+    "bcrypt": "^5.1.1",
     "cors": "^2.8.5",
     "dotenv": "^17.2.3",
-    "pg": "^8.16.3",
+    "express": "^4.18.2",
     "jsonwebtoken": "^9.0.2",
-    "bcrypt": "^5.1.1"
+    "pg": "^8.16.3"
   },
   "devDependencies": {
     "jest": "^29.7.0",
+    "jest-express": "^1.12.0",
     "supertest": "^6.3.3"
   }
 }
