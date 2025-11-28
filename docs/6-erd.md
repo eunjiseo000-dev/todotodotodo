@@ -48,13 +48,15 @@ erDiagram
 
 **목적**: 애플리케이션의 사용자 정보 관리
 
-| 속성 | 데이터 타입 | 제약조건 | 설명 |
-|------|-----------|--------|------|
-| `userId` | UUID | PK | 사용자 고유 식별자 |
-| `email` | String(255) | UK, NOT NULL | RFC 5322 형식, 중복 불가 |
-| `passwordHash` | String(100) | NOT NULL | bcrypt로 해시된 비밀번호 (8자 이상) |
-| `name` | String(50) | NOT NULL | 사용자 이름 (2-50자) |
-| `createdAt` | DateTime | NOT NULL, DEFAULT | ISO 8601 형식, 자동 생성 |
+**참고**: 데이터베이스의 컬럼명은 lowercase로 저장됨 (userId → userid, passwordHash → passwordhash 등)
+
+| 속성 (ERD) | DB 컬럼명 | 데이터 타입 | 제약조건 | 설명 |
+|----------|----------|-----------|--------|------|
+| `userId` | `userid` | UUID | PK | 사용자 고유 식별자 |
+| `email` | `email` | String(255) | UK, NOT NULL | RFC 5322 형식, 중복 불가 |
+| `passwordHash` | `passwordhash` | String(100) | NOT NULL | bcrypt로 해시된 비밀번호 (8자 이상) |
+| `name` | `name` | String(50) | NOT NULL | 사용자 이름 (2-50자) |
+| `createdAt` | `createdat` | DateTime | NOT NULL, DEFAULT | ISO 8601 형식, 자동 생성 |
 
 **인덱스:**
 - `email` (UNIQUE): 로그인 시 이메일 조회 성능
@@ -71,19 +73,21 @@ erDiagram
 
 **목적**: 사용자의 할일 항목 관리
 
-| 속성 | 데이터 타입 | 제약조건 | 설명 |
-|------|-----------|--------|------|
-| `todoId` | UUID | PK | 할일 고유 식별자 |
-| `userId` | UUID | FK, NOT NULL | 소유자 (User.userId 참조) |
-| `title` | String(500) | NOT NULL | 할일 제목 (1-500자) |
-| `startDate` | Date | NOT NULL | 할일 시작 날짜 (YYYY-MM-DD) |
-| `endDate` | Date | NOT NULL | 할일 종료 날짜 (YYYY-MM-DD) |
-| `priority` | Integer | NOT NULL, DEFAULT | 표시 순서 (작을수록 상위, 기본값: 999999) |
-| `isCompleted` | Boolean | NOT NULL, DEFAULT | 완료 여부 (기본값: false) |
-| `isDeleted` | Boolean | NOT NULL, DEFAULT | 삭제 여부 - Soft Delete (기본값: false) |
-| `createdAt` | DateTime | NOT NULL, DEFAULT | 생성 시각 (자동) |
-| `updatedAt` | DateTime | NOT NULL, DEFAULT | 마지막 수정 시각 (자동) |
-| `deletedAt` | DateTime | NULLABLE | 삭제 시각 (isDeleted=true일 때만 값 보유) |
+**참고**: 데이터베이스의 컬럼명은 lowercase로 저장됨 (todoId → todoid, startDate → startdate 등)
+
+| 속성 (ERD) | DB 컬럼명 | 데이터 타입 | 제약조건 | 설명 |
+|----------|----------|-----------|--------|------|
+| `todoId` | `todoid` | UUID | PK | 할일 고유 식별자 |
+| `userId` | `userid` | UUID | FK, NOT NULL | 소유자 (User.userid 참조) |
+| `title` | `title` | String(500) | NOT NULL | 할일 제목 (1-500자) |
+| `startDate` | `startdate` | Date | NOT NULL | 할일 시작 날짜 (YYYY-MM-DD) |
+| `endDate` | `enddate` | Date | NOT NULL | 할일 종료 날짜 (YYYY-MM-DD) |
+| `priority` | `priority` | Integer | NOT NULL, DEFAULT | 표시 순서 (작을수록 상위, 기본값: 999999) |
+| `isCompleted` | `iscompleted` | Boolean | NOT NULL, DEFAULT | 완료 여부 (기본값: false) |
+| `isDeleted` | `isdeleted` | Boolean | NOT NULL, DEFAULT | 삭제 여부 - Soft Delete (기본값: false) |
+| `createdAt` | `createdat` | DateTime | NOT NULL, DEFAULT | 생성 시각 (자동) |
+| `updatedAt` | `updatedat` | DateTime | NOT NULL, DEFAULT | 마지막 수정 시각 (자동) |
+| `deletedAt` | `deletedat` | DateTime | NULLABLE | 삭제 시각 (isDeleted=true일 때만 값 보유) |
 
 **인덱스:**
 - `userId` (B-tree): 사용자별 할일 조회
@@ -193,14 +197,16 @@ WHERE todoId = ? AND userId = ? AND isDeleted = false;
 
 **인덱스 목록:**
 
-| 인덱스명 | 테이블 | 컬럼 | 유형 | 목적 |
-|---------|-------|------|------|------|
-| pk_user_id | user | userId | PRIMARY | 고유 식별 |
-| uq_user_email | user | email | UNIQUE | 이메일 중복 방지 |
-| idx_todo_userId | todo | userId | B-tree | 사용자별 할일 조회 |
-| idx_todo_isDeleted | todo | isDeleted | B-tree | Soft Delete 필터링 |
-| idx_todo_isCompleted | todo | isCompleted | B-tree | 완료/진행중 분류 |
-| idx_todo_composite | todo | (userId, isDeleted, isCompleted) | 복합 | 종합 조회 최적화 |
+| 인덱스명 | 테이블 | 컬럼 (DB) | 유형 | 목적 | 상태 |
+|---------|-------|------|------|------|------|
+| user_pkey | user | userid | PRIMARY | 고유 식별 | ✅ 생성됨 |
+| user_email_key | user | email | UNIQUE | 이메일 중복 방지 | ✅ 생성됨 |
+| idx_user_email | user | email | B-tree | 로그인 시 이메일 조회 | ✅ 생성됨 |
+| idx_todo_userid | todo | userid | B-tree | 사용자별 할일 조회 | ✅ 생성됨 |
+| idx_todo_isdeleted | todo | isdeleted | B-tree | Soft Delete 필터링 | ✅ 생성됨 |
+| idx_todo_iscompleted | todo | iscompleted | B-tree | 완료/진행중 분류 | ✅ 생성됨 |
+| idx_todo_composite | todo | (userid, isdeleted, iscompleted) | 복합 | 종합 조회 최적화 | ✅ 생성됨 |
+| idx_todo_dates | todo | (startdate, enddate) | 복합 | 날짜 범위 조회 | ✅ 생성됨 |
 
 **성능 목표:**
 - DB 쿼리: 50ms 이내

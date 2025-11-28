@@ -21,7 +21,8 @@ CREATE TABLE IF NOT EXISTS "user" (
 
 -- Create indexes for user table
 CREATE INDEX IF NOT EXISTS idx_user_email ON "user"(email);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_user_email_unique ON "user"(email);
+-- PRIMARY KEY 제약이 자동으로 idx_user_pkey 생성
+-- UNIQUE 제약이 자동으로 user_email_key 생성
 
 -- Add comments to user table
 COMMENT ON TABLE "user" IS '사용자 정보 테이블 - 회원가입/로그인 관리';
@@ -54,11 +55,12 @@ CREATE TABLE IF NOT EXISTS todo (
 );
 
 -- Create indexes for todo table
-CREATE INDEX IF NOT EXISTS idx_todo_userId ON todo(userId);
-CREATE INDEX IF NOT EXISTS idx_todo_isDeleted ON todo(isDeleted);
-CREATE INDEX IF NOT EXISTS idx_todo_isCompleted ON todo(isCompleted);
-CREATE INDEX IF NOT EXISTS idx_todo_composite ON todo(userId, isDeleted, isCompleted);
-CREATE INDEX IF NOT EXISTS idx_todo_dates ON todo(startDate, endDate);
+-- 참고: 컬럼명은 lowercase로 저장됨 (자동 변환)
+CREATE INDEX IF NOT EXISTS idx_todo_userid ON todo(userid);
+CREATE INDEX IF NOT EXISTS idx_todo_isdeleted ON todo(isdeleted);
+CREATE INDEX IF NOT EXISTS idx_todo_iscompleted ON todo(iscompleted);
+CREATE INDEX IF NOT EXISTS idx_todo_composite ON todo(userid, isdeleted, iscompleted);
+CREATE INDEX IF NOT EXISTS idx_todo_dates ON todo(startdate, enddate);
 
 -- Add comments to todo table
 COMMENT ON TABLE todo IS '할일 항목 테이블 - Soft Delete 적용으로 삭제된 항목 복구 가능';
