@@ -50,14 +50,8 @@ const Dashboard = () => {
     }));
   }, [todos, filter]);
 
-  // 탭 변경 시 로딩 상태 표시를 위한 별도 로딩 상태
-  const [tabLoading, setTabLoading] = useState(false);
-
-  const handleTabChange = async (newFilter) => {
-    setTabLoading(true);
+  const handleTabChange = (newFilter) => {
     setFilter(newFilter);
-    await new Promise(resolve => setTimeout(resolve, 100)); // 상태 업데이트 대기
-    setTabLoading(false);
   };
 
   // Helper: Refresh all filter counts for real-time updates
@@ -135,14 +129,23 @@ const Dashboard = () => {
             )}
           </div>
 
-          <TabNav tabs={tabs} activeTab={filter} onTabChange={handleTabChange} disabled={tabLoading} />
+          <TabNav tabs={tabs} activeTab={filter} onTabChange={handleTabChange} />
 
+          {/* 로딩 상태를 즉시 표시 */}
           {loading && todos.length === 0 ? (
             <div className="py-12">
               <Spinner size="lg" />
             </div>
           ) : (
-            <TodoList todos={todos} filter={filter} onMutate={refreshAllCounts} />
+            <div className="relative">
+              <TodoList todos={todos} filter={filter} onMutate={refreshAllCounts} />
+              {/* 데이터는 있지만 로딩 중일 때 오버레이 표시 */}
+              {loading && todos.length > 0 && (
+                <div className="absolute inset-0 bg-white bg-opacity-40 flex items-center justify-center rounded-lg">
+                  <Spinner size="sm" />
+                </div>
+              )}
+            </div>
           )}
         </div>
       </main>
