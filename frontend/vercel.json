@@ -6,6 +6,6 @@
     }
   ],
   "git": {
-    "deplymentEnabled": false
+    "deploymentEnabled": false
   }
 }
