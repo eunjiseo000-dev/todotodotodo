@@ -46,6 +46,17 @@ export const TodoProvider = ({ children }) => {
     }
   }, []);
 
+  // 특정 필터의 개수만 조회 (더 효율적)
+  const getCountForFilter = useCallback(async (filterType) => {
+    try {
+      const response = await todoAPI.getTodos(filterType);
+      return response.data.data.todos?.length || 0;
+    } catch (err) {
+      console.error(`${filterType} 개수 조회 실패:`, err);
+      return 0;
+    }
+  }, []);
+
   // 할일 추가
   const addTodo = async (todoData) => {
     try {
@@ -179,6 +190,7 @@ export const TodoProvider = ({ children }) => {
     error,
     fetchTodos,
     getCounts,
+    getCountForFilter,
     addTodo,
     updateTodo,
     deleteTodo,

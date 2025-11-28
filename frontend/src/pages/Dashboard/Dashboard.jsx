@@ -10,7 +10,7 @@ import Spinner from '../../components/Loading/Spinner';
 const Dashboard = () => {
   const navigate = useNavigate();
   const { user, logout, isAuthenticated } = useAuth();
-  const { todos, filter, setFilter, fetchTodos, getCounts, addTodo, loading } = useTodos();
+  const { todos, filter, setFilter, fetchTodos, getCounts, getCountForFilter, addTodo, loading } = useTodos();
 
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [counts, setCounts] = useState({
@@ -25,7 +25,7 @@ const Dashboard = () => {
     }
   }, [isAuthenticated, navigate]);
 
-  // 초기 로드 시 모든 필터의 개수 가져오기
+  // 초기 로드 시 모든 필터의 개수 가져오기 (의존성 배열에 함수 제외)
   useEffect(() => {
     const initializeCounts = async () => {
       const counts = await getCounts();
@@ -35,6 +35,7 @@ const Dashboard = () => {
     };
 
     initializeCounts();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -49,10 +50,35 @@ const Dashboard = () => {
     }));
   }, [todos, filter]);
 
+  // 탭 변경 시 로딩 상태 표시를 위한 별도 로딩 상태
+  const [tabLoading, setTabLoading] = useState(false);
+
+  const handleTabChange = async (newFilter) => {
+    setTabLoading(true);
+    setFilter(newFilter);
+    await new Promise(resolve => setTimeout(resolve, 100)); // 상태 업데이트 대기
+    setTabLoading(false);
+  };
+
   // Helper: Refresh all filter counts for real-time updates
+  // 현재 필터의 개수는 todos.length로 대체하여 API 호출 최소화
   const refreshAllCounts = async () => {
-    const counts = await getCounts();
-    setCounts(counts);
+    const otherFilters = filter === 'active' ? ['completed', 'deleted'] :
+                        filter === 'completed' ? ['active', 'deleted'] :
+                        ['active', 'completed'];
+
+    const updatedCounts = { ...counts, [filter]: todos.length };
+
+    // 다른 필터들의 개수만 병렬로 조회
+    const results = await Promise.all(
+      otherFilters.map(f => getCountForFilter(f))
+    );
+
+    otherFilters.forEach((f, index) => {
+      updatedCounts[f] = results[index];
+    });
+
+    setCounts(updatedCounts);
   };
 
   const handleLogout = () => {
@@ -109,7 +135,7 @@ const Dashboard = () => {
             )}
           </div>
 
-          <TabNav tabs={tabs} activeTab={filter} onTabChange={setFilter} />
+          <TabNav tabs={tabs} activeTab={filter} onTabChange={handleTabChange} disabled={tabLoading} />
 
           {loading && todos.length === 0 ? (
             <div className="py-12">
