@@ -87,35 +87,82 @@ const TodoList = ({ todos, filter, onMutate }) => {
     await fetchTodos(filter);
   };
 
-  // Wrap mutation functions to refresh after completion
+  // 낙관적 업데이트: 로컬 상태를 먼저 업데이트, API는 백그라운드에서 처리
   const handleToggleComplete = async (id) => {
-    await toggleComplete(id);
-    await refreshCurrentFilter();
-    if (onMutate) await onMutate();
+    // 로컬 상태 즉시 업데이트
+    const updatedTodos = localTodos.map(todo =>
+      todo.todoId === id ? { ...todo, isCompleted: !todo.isCompleted } : todo
+    );
+    setLocalTodos(updatedTodos);
+
+    // API 요청 (백그라운드)
+    const result = await toggleComplete(id);
+    if (!result.success) {
+      // 실패 시 원래 상태로 복원
+      await refreshCurrentFilter();
+      if (onMutate) await onMutate();
+    } else {
+      // 성공 시 카운트만 업데이트
+      if (onMutate) await onMutate();
+    }
   };
 
   const handleDeleteTodo = async (id) => {
-    await deleteTodo(id);
-    await refreshCurrentFilter();
-    if (onMutate) await onMutate();
+    // 로컬 상태 즉시 업데이트
+    const updatedTodos = localTodos.filter(todo => todo.todoId !== id);
+    setLocalTodos(updatedTodos);
+
+    // API 요청
+    const result = await deleteTodo(id);
+    if (!result.success) {
+      await refreshCurrentFilter();
+      if (onMutate) await onMutate();
+    } else {
+      if (onMutate) await onMutate();
+    }
   };
 
   const handleRestoreTodo = async (id) => {
-    await restoreTodo(id);
-    await refreshCurrentFilter();
-    if (onMutate) await onMutate();
+    // 로컬 상태 즉시 업데이트
+    const updatedTodos = localTodos.filter(todo => todo.todoId !== id);
+    setLocalTodos(updatedTodos);
+
+    // API 요청
+    const result = await restoreTodo(id);
+    if (!result.success) {
+      await refreshCurrentFilter();
+      if (onMutate) await onMutate();
+    } else {
+      if (onMutate) await onMutate();
+    }
   };
 
   const handlePermanentDeleteTodo = async (id) => {
-    await permanentDeleteTodo(id);
-    await refreshCurrentFilter();
-    if (onMutate) await onMutate();
+    // 로컬 상태 즉시 업데이트
+    const updatedTodos = localTodos.filter(todo => todo.todoId !== id);
+    setLocalTodos(updatedTodos);
+
+    // API 요청
+    const result = await permanentDeleteTodo(id);
+    if (!result.success) {
+      await refreshCurrentFilter();
+      if (onMutate) await onMutate();
+    } else {
+      if (onMutate) await onMutate();
+    }
   };
 
   const handleReorderTodo = async (id, newPriority) => {
-    await reorderTodo(id, newPriority);
-    await refreshCurrentFilter();
-    if (onMutate) await onMutate();
+    // 드래그 중에는 이미 localTodos가 업데이트되어 있음
+    // API 요청은 백그라운드에서 처리
+    const result = await reorderTodo(id, newPriority);
+    if (!result.success) {
+      // 실패 시만 새로고침
+      await refreshCurrentFilter();
+      if (onMutate) await onMutate();
+    } else {
+      if (onMutate) await onMutate();
+    }
   };
 
   if (todos.length === 0) {
