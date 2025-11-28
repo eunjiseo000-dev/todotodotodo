@@ -54,9 +54,9 @@ export const todoAPI = {
   createTodo: (data) => api.post('/todos', data),
   updateTodo: (id, data) => api.put(`/todos/${id}`, data),
   deleteTodo: (id) => api.delete(`/todos/${id}`),
-  restoreTodo: (id) => api.patch(`/todos/${id}/restore`),
+  restoreTodo: (id) => api.post(`/todos/${id}/restore`),
   toggleComplete: (id) => api.patch(`/todos/${id}/complete`),
-  reorderTodo: (id, data) => api.patch(`/todos/${id}/reorder`, data),
+  reorderTodo: (id, data) => api.patch(`/todos/${id}/priority`, data),
   permanentDeleteTodo: (id) => api.delete(`/todos/${id}/permanent`),
 };
 

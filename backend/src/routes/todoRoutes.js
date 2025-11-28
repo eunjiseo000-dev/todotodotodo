@@ -4,9 +4,16 @@ const router = express.Router();
 const pool = require('../config/database');
 const authMiddleware = require('../middleware/authMiddleware');
 const { validateTitle, validateDate, validateDateRange } = require('../utils/validation');
+const {
+  ValidationError,
+  NotFoundError,
+  ForbiddenError,
+  BadRequestError,
+  AppError
+} = require('../utils/customErrors');
 
 // GET /api/todos - 할일 목록 조회
-router.get('/', authMiddleware, async (req, res) => {
+router.get('/', authMiddleware, async (req, res, next) => {
   try {
     const userId = req.user.userId;
     const { status } = req.query;
@@ -14,11 +21,7 @@ router.get('/', authMiddleware, async (req, res) => {
     // 1. status 파라미터 검증
     const validStatuses = ['active', 'completed', 'deleted'];
     if (status && !validStatuses.includes(status)) {
-      return res.status(400).json({
-        status: 'error',
-        message: `Invalid status parameter. Allowed values: ${validStatuses.join(', ')}`,
-        errorCode: 'INVALID_STATUS',
-      });
+      throw new ValidationError(`Invalid status parameter. Allowed values: ${validStatuses.join(', ')}`);
     }
 
     // 2. 동적 SQL 쿼리 구성
@@ -87,17 +90,13 @@ router.get('/', authMiddleware, async (req, res) => {
       },
     });
   } catch (err) {
-    console.error('Get todos error:', err);
-    res.status(500).json({
-      status: 'error',
-      message: 'Internal server error',
-      errorCode: 'INTERNAL_ERROR',
-    });
+    // Pass the error to the global error handler
+    next(err);
   }
 });
 
 // POST /api/todos - 할일 추가
-router.post('/', authMiddleware, async (req, res) => {
+router.post('/', authMiddleware, async (req, res, next) => {
   try {
     // 1. userId 추출
     const userId = req.user.userId;
@@ -107,50 +106,30 @@ router.post('/', authMiddleware, async (req, res) => {
 
     // 3-1. 필드 검증: title, startDate, endDate 필수 (undefined/null 체크)
     if (title === undefined || title === null || startDate === undefined || startDate === null || endDate === undefined || endDate === null) {
-      return res.status(400).json({
-        status: 'error',
-        message: 'Missing required fields: title, startDate, endDate',
-        errorCode: 'MISSING_FIELDS',
-      });
+      throw new ValidationError('Missing required fields: title, startDate, endDate');
     }
 
     // 3-2. 형식 검증: 제목 1-500자 (빈 문자열 포함)
     const titleValidation = validateTitle(title);
     if (!titleValidation.valid) {
-      return res.status(400).json({
-        status: 'error',
-        message: titleValidation.error,
-        errorCode: 'INVALID_TITLE',
-      });
+      throw new ValidationError(titleValidation.error);
     }
 
     // 3-3. 형식 검증: 날짜 YYYY-MM-DD
     const startDateValidation = validateDate(startDate);
     if (!startDateValidation.valid) {
-      return res.status(400).json({
-        status: 'error',
-        message: `Invalid startDate: ${startDateValidation.error}`,
-        errorCode: 'INVALID_DATE',
-      });
+      throw new ValidationError(`Invalid startDate: ${startDateValidation.error}`);
     }
 
     const endDateValidation = validateDate(endDate);
     if (!endDateValidation.valid) {
-      return res.status(400).json({
-        status: 'error',
-        message: `Invalid endDate: ${endDateValidation.error}`,
-        errorCode: 'INVALID_DATE',
-      });
+      throw new ValidationError(`Invalid endDate: ${endDateValidation.error}`);
     }
 
     // 3-4. 비즈니스 검증: startDate <= endDate
     const dateRangeValidation = validateDateRange(startDate, endDate);
     if (!dateRangeValidation.valid) {
-      return res.status(400).json({
-        status: 'error',
-        message: dateRangeValidation.error,
-        errorCode: 'INVALID_DATE_RANGE',
-      });
+      throw new ValidationError(dateRangeValidation.error);
     }
 
     // 4. Priority 자동 할당: MAX(priority) 조회
@@ -237,17 +216,13 @@ router.post('/', authMiddleware, async (req, res) => {
       data: createdTodo,
     });
   } catch (err) {
-    console.error('Create todo error:', err);
-    res.status(500).json({
-      status: 'error',
-      message: 'Internal server error',
-      errorCode: 'INTERNAL_ERROR',
-    });
+    // Pass the error to the global error handler
+    next(err);
   }
 });
 
 // PUT /api/todos/:id - 할일 수정
-router.put('/:id', authMiddleware, async (req, res) => {
+router.put('/:id', authMiddleware, async (req, res, next) => {
   try {
     const userId = req.user.userId;
     const todoId = req.params.id;
@@ -273,31 +248,19 @@ router.put('/:id', authMiddleware, async (req, res) => {
     const findTodoResult = await pool.query(findTodoQuery, [todoId]);
 
     if (findTodoResult.rows.length === 0) {
-      return res.status(404).json({
-        status: 'error',
-        message: 'Todo not found',
-        errorCode: 'NOT_FOUND',
-      });
+      throw new NotFoundError('Todo not found');
     }
 
     const todo = findTodoResult.rows[0];
 
     // 2. 사용자 권한 확인 (자신의 할일만 수정 가능)
     if (todo.userid !== userId) {
-      return res.status(403).json({
-        status: 'error',
-        message: 'You do not have permission to access this resource',
-        errorCode: 'FORBIDDEN',
-      });
+      throw new ForbiddenError();
     }
 
     // 3. 삭제된 할일인지 확인 (isDeleted=true일 경우 수정 불가)
     if (todo.isdeleted) {
-      return res.status(400).json({
-        status: 'error',
-        message: 'Cannot modify a deleted todo',
-        errorCode: 'BAD_REQUEST',
-      });
+      throw new BadRequestError('Cannot modify a deleted todo');
     }
 
     // 4. 요청 바디 필드 검증 (title, startDate, endDate가 모두 없을 경우는 통과)
@@ -308,33 +271,21 @@ router.put('/:id', authMiddleware, async (req, res) => {
     if (hasTitle) {
       const titleValidation = validateTitle(title);
       if (!titleValidation.valid) {
-        return res.status(400).json({
-          status: 'error',
-          message: titleValidation.error,
-          errorCode: 'INVALID_TITLE',
-        });
+        throw new ValidationError(titleValidation.error);
       }
     }
 
     if (hasStartDate) {
       const dateValidation = validateDate(startDate);
       if (!dateValidation.valid) {
-        return res.status(400).json({
-          status: 'error',
-          message: `Invalid startDate: ${dateValidation.error}`,
-          errorCode: 'INVALID_DATE',
-        });
+        throw new ValidationError(`Invalid startDate: ${dateValidation.error}`);
       }
     }
 
     if (hasEndDate) {
       const dateValidation = validateDate(endDate);
       if (!dateValidation.valid) {
-        return res.status(400).json({
-          status: 'error',
-          message: `Invalid endDate: ${dateValidation.error}`,
-          errorCode: 'INVALID_DATE',
-        });
+        throw new ValidationError(`Invalid endDate: ${dateValidation.error}`);
       }
     }
 
@@ -345,11 +296,7 @@ router.put('/:id', authMiddleware, async (req, res) => {
     if (hasStartDate || hasEndDate) {
       const dateRangeValidation = validateDateRange(actualStartDate, actualEndDate);
       if (!dateRangeValidation.valid) {
-        return res.status(400).json({
-          status: 'error',
-          message: dateRangeValidation.error,
-          errorCode: 'INVALID_DATE_RANGE',
-        });
+        throw new ValidationError(dateRangeValidation.error);
       }
     }
 
@@ -414,17 +361,13 @@ router.put('/:id', authMiddleware, async (req, res) => {
       data: updatedTodo,
     });
   } catch (err) {
-    console.error('Update todo error:', err);
-    res.status(500).json({
-      status: 'error',
-      message: 'Internal server error',
-      errorCode: 'INTERNAL_ERROR',
-    });
+    // Pass the error to the global error handler
+    next(err);
   }
 });
 
 // DELETE /api/todos/:id - 할일 삭제 (소프트 삭제)
-router.delete('/:id', authMiddleware, async (req, res) => {
+router.delete('/:id', authMiddleware, async (req, res, next) => {
   try {
     const userId = req.user.userId;
     const todoId = req.params.id;
@@ -440,22 +383,14 @@ router.delete('/:id', authMiddleware, async (req, res) => {
     const findTodoResult = await pool.query(findTodoQuery, [todoId]);
 
     if (findTodoResult.rows.length === 0) {
-      return res.status(404).json({
-        status: 'error',
-        message: 'Todo not found',
-        errorCode: 'NOT_FOUND',
-      });
+      throw new NotFoundError('Todo not found');
     }
 
     const todo = findTodoResult.rows[0];
 
     // 2. 사용자 권한 확인 (자신의 할일만 삭제 가능)
     if (todo.userid !== userId) {
-      return res.status(403).json({
-        status: 'error',
-        message: 'You do not have permission to access this resource',
-        errorCode: 'FORBIDDEN',
-      });
+      throw new ForbiddenError();
     }
 
     // 3. 소프트 삭제 쿼리 실행 (isdeleted=true, deletedat=현재 시각)
@@ -514,17 +449,13 @@ router.delete('/:id', authMiddleware, async (req, res) => {
       data: deletedTodo,
     });
   } catch (err) {
-    console.error('Delete todo error:', err);
-    res.status(500).json({
-      status: 'error',
-      message: 'Internal server error',
-      errorCode: 'INTERNAL_ERROR',
-    });
+    // Pass the error to the global error handler
+    next(err);
   }
 });
 
 // POST /api/todos/:id/restore - 할일 복원
-router.post('/:id/restore', authMiddleware, async (req, res) => {
+router.post('/:id/restore', authMiddleware, async (req, res, next) => {
   try {
     const userId = req.user.userId;
     const todoId = req.params.id;
@@ -541,31 +472,19 @@ router.post('/:id/restore', authMiddleware, async (req, res) => {
     const findTodoResult = await pool.query(findTodoQuery, [todoId]);
 
     if (findTodoResult.rows.length === 0) {
-      return res.status(404).json({
-        status: 'error',
-        message: 'Todo not found',
-        errorCode: 'NOT_FOUND',
-      });
+      throw new NotFoundError('Todo not found');
     }
 
     const todo = findTodoResult.rows[0];
 
     // 2. 사용자 권한 확인 (자신의 할일만 복원 가능)
     if (todo.userid !== userId) {
-      return res.status(403).json({
-        status: 'error',
-        message: 'You do not have permission to access this resource',
-        errorCode: 'FORBIDDEN',
-      });
+      throw new ForbiddenError();
     }
 
     // 3. 삭제된 할일인지 확인 (복원은 삭제된 할일만 가능)
     if (!todo.isdeleted) {
-      return res.status(400).json({
-        status: 'error',
-        message: 'Cannot restore a non-deleted todo',
-        errorCode: 'BAD_REQUEST',
-      });
+      throw new BadRequestError('Cannot restore a non-deleted todo');
     }
 
     // 4. 복원 쿼리 실행 (isdeleted=false, deletedat=null)
@@ -624,17 +543,13 @@ router.post('/:id/restore', authMiddleware, async (req, res) => {
       data: restoredTodo,
     });
   } catch (err) {
-    console.error('Restore todo error:', err);
-    res.status(500).json({
-      status: 'error',
-      message: 'Internal server error',
-      errorCode: 'INTERNAL_ERROR',
-    });
+    // Pass the error to the global error handler
+    next(err);
   }
 });
 
 // PATCH /api/todos/:id/complete - 할일 완료 처리
-router.patch('/:id/complete', authMiddleware, async (req, res) => {
+router.patch('/:id/complete', authMiddleware, async (req, res, next) => {
   try {
     const userId = req.user.userId;
     const todoId = req.params.id;
@@ -652,31 +567,19 @@ router.patch('/:id/complete', authMiddleware, async (req, res) => {
     const findTodoResult = await pool.query(findTodoQuery, [todoId]);
 
     if (findTodoResult.rows.length === 0) {
-      return res.status(404).json({
-        status: 'error',
-        message: 'Todo not found',
-        errorCode: 'NOT_FOUND',
-      });
+      throw new NotFoundError('Todo not found');
     }
 
     const todo = findTodoResult.rows[0];
 
     // 2. 사용자 권한 확인 (자신의 할일만 완료 처리 가능)
     if (todo.userid !== userId) {
-      return res.status(403).json({
-        status: 'error',
-        message: 'You do not have permission to access this resource',
-        errorCode: 'FORBIDDEN',
-      });
+      throw new ForbiddenError();
     }
 
     // 3. 삭제된 할일인지 확인 (삭제된 할일은 완료 처리할 수 없음)
     if (todo.isdeleted) {
-      return res.status(400).json({
-        status: 'error',
-        message: 'Cannot complete a deleted todo',
-        errorCode: 'BAD_REQUEST',
-      });
+      throw new BadRequestError('Cannot complete a deleted todo');
     }
 
     // 4. 완료 상태 토글 (true <-> false)
@@ -735,17 +638,13 @@ router.patch('/:id/complete', authMiddleware, async (req, res) => {
       data: completedTodo,
     });
   } catch (err) {
-    console.error('Complete todo error:', err);
-    res.status(500).json({
-      status: 'error',
-      message: 'Internal server error',
-      errorCode: 'INTERNAL_ERROR',
-    });
+    // Pass the error to the global error handler
+    next(err);
   }
 });
 
 // DELETE /api/todos/:id/permanent - 할일 영구삭제
-router.delete('/:id/permanent', authMiddleware, async (req, res) => {
+router.delete('/:id/permanent', authMiddleware, async (req, res, next) => {
   try {
     const userId = req.user.userId;
     const todoId = req.params.id;
@@ -762,31 +661,19 @@ router.delete('/:id/permanent', authMiddleware, async (req, res) => {
     const findTodoResult = await pool.query(findTodoQuery, [todoId]);
 
     if (findTodoResult.rows.length === 0) {
-      return res.status(404).json({
-        status: 'error',
-        message: 'Todo not found',
-        errorCode: 'NOT_FOUND',
-      });
+      throw new NotFoundError('Todo not found');
     }
 
     const todo = findTodoResult.rows[0];
 
     // 2. 사용자 권한 확인 (자신의 할일만 영구삭제 가능)
     if (todo.userid !== userId) {
-      return res.status(403).json({
-        status: 'error',
-        message: 'You do not have permission to access this resource',
-        errorCode: 'FORBIDDEN',
-      });
+      throw new ForbiddenError();
     }
 
     // 3. 삭제된 할일인지 확인 (isDeleted=false인 할일은 영구삭제 불가)
     if (!todo.isdeleted) {
-      return res.status(400).json({
-        status: 'error',
-        message: 'Cannot permanently delete a non-deleted todo',
-        errorCode: 'BAD_REQUEST',
-      });
+      throw new BadRequestError('Cannot permanently delete a non-deleted todo');
     }
 
     // 4. 데이터베이스에서 물리적 삭제
@@ -799,11 +686,7 @@ router.delete('/:id/permanent', authMiddleware, async (req, res) => {
 
     if (deleteResult.rowCount === 0) {
       // 조건에 맞는 행이 없는 경우 (이론적으로는 발생할 수 없음)
-      return res.status(404).json({
-        status: 'error',
-        message: 'Todo not found',
-        errorCode: 'NOT_FOUND',
-      });
+      throw new NotFoundError('Todo not found');
     }
 
     // 5. 응답 반환
@@ -812,17 +695,13 @@ router.delete('/:id/permanent', authMiddleware, async (req, res) => {
       message: 'Todo permanently deleted successfully',
     });
   } catch (err) {
-    console.error('Permanent delete todo error:', err);
-    res.status(500).json({
-      status: 'error',
-      message: 'Internal server error',
-      errorCode: 'INTERNAL_ERROR',
-    });
+    // Pass the error to the global error handler
+    next(err);
   }
 });
 
 // PATCH /api/todos/:id/priority - 할일 우선순위 변경
-router.patch('/:id/priority', authMiddleware, async (req, res) => {
+router.patch('/:id/priority', authMiddleware, async (req, res, next) => {
   try {
     const userId = req.user.userId;
     const todoId = req.params.id;
@@ -830,28 +709,16 @@ router.patch('/:id/priority', authMiddleware, async (req, res) => {
 
     // 1. 요청 바디 검증
     if (newPriority === undefined || newPriority === null) {
-      return res.status(400).json({
-        status: 'error',
-        message: 'Priority is required',
-        errorCode: 'MISSING_FIELDS',
-      });
+      throw new ValidationError('Priority is required');
     }
 
     // 2. 우선순위 범위 검증
     if (typeof newPriority !== 'number' || newPriority <= 0) {
-      return res.status(400).json({
-        status: 'error',
-        message: 'Priority must be a number greater than 0',
-        errorCode: 'INVALID_PRIORITY',
-      });
+      throw new ValidationError('Priority must be a number greater than 0');
     }
 
     if (newPriority > 999999) {
-      return res.status(400).json({
-        status: 'error',
-        message: 'Priority exceeds maximum allowed value',
-        errorCode: 'INVALID_PRIORITY',
-      });
+      throw new ValidationError('Priority exceeds maximum allowed value');
     }
 
     // 3. 할일 존재 여부 확인 및 사용자 권한 검증
@@ -867,22 +734,14 @@ router.patch('/:id/priority', authMiddleware, async (req, res) => {
     const findTodoResult = await pool.query(findTodoQuery, [todoId]);
 
     if (findTodoResult.rows.length === 0) {
-      return res.status(404).json({
-        status: 'error',
-        message: 'Todo not found',
-        errorCode: 'NOT_FOUND',
-      });
+      throw new NotFoundError('Todo not found');
     }
 
     const todo = findTodoResult.rows[0];
 
     // 4. 사용자 권한 확인 (자신의 할일만 변경 가능)
     if (todo.userid !== userId) {
-      return res.status(403).json({
-        status: 'error',
-        message: 'You do not have permission to access this resource',
-        errorCode: 'FORBIDDEN',
-      });
+      throw new ForbiddenError();
     }
 
     // 트랜잭션 시작: 변경하려는 우선순위와 같은 우선순위를 가진 다른 할일들의 우선순위를 조정
@@ -978,17 +837,13 @@ router.patch('/:id/priority', authMiddleware, async (req, res) => {
       client.release();
     }
   } catch (err) {
-    console.error('Reorder todo error:', err);
-    res.status(500).json({
-      status: 'error',
-      message: 'Internal server error',
-      errorCode: 'INTERNAL_ERROR',
-    });
+    // Pass the error to the global error handler
+    next(err);
   }
 });
 
 // DELETE /api/todos/:id/permanent - 할일 영구 삭제
-router.delete('/:id/permanent', authMiddleware, async (req, res) => {
+router.delete('/:id/permanent', authMiddleware, async (req, res, next) => {
   try {
     const userId = req.user.userId;
     const todoId = req.params.id;
@@ -1005,31 +860,19 @@ router.delete('/:id/permanent', authMiddleware, async (req, res) => {
     const findTodoResult = await pool.query(findTodoQuery, [todoId]);
 
     if (findTodoResult.rows.length === 0) {
-      return res.status(404).json({
-        status: 'error',
-        message: 'Todo not found',
-        errorCode: 'NOT_FOUND',
-      });
+      throw new NotFoundError('Todo not found');
     }
 
     const todo = findTodoResult.rows[0];
 
     // 2. 사용자 권한 확인 (자신의 할일만 영구 삭제 가능)
     if (todo.userid !== userId) {
-      return res.status(403).json({
-        status: 'error',
-        message: 'You do not have permission to access this resource',
-        errorCode: 'FORBIDDEN',
-      });
+      throw new ForbiddenError();
     }
 
     // 3. 삭제된 상태인지 확인 (isdeleted=true여야 영구 삭제 가능)
     if (!todo.isdeleted) {
-      return res.status(400).json({
-        status: 'error',
-        message: 'Cannot permanently delete a non-deleted todo',
-        errorCode: 'BAD_REQUEST',
-      });
+      throw new BadRequestError('Cannot permanently delete a non-deleted todo');
     }
 
     // 4. 물리적 삭제 쿼리 실행
@@ -1042,11 +885,7 @@ router.delete('/:id/permanent', authMiddleware, async (req, res) => {
 
     if (deleteResult.rowCount === 0) {
       // 이 경우는 위에서 권한 확인과 삭제 상태 확인을 했으므로 거의 발생하지 않음
-      return res.status(404).json({
-        status: 'error',
-        message: 'Todo not found',
-        errorCode: 'NOT_FOUND',
-      });
+      throw new NotFoundError('Todo not found');
     }
 
     // 5. 응답 반환
@@ -1055,12 +894,8 @@ router.delete('/:id/permanent', authMiddleware, async (req, res) => {
       message: 'Todo permanently deleted successfully',
     });
   } catch (err) {
-    console.error('Permanent delete todo error:', err);
-    res.status(500).json({
-      status: 'error',
-      message: 'Internal server error',
-      errorCode: 'INTERNAL_ERROR',
-    });
+    // Pass the error to the global error handler
+    next(err);
   }
 });
 

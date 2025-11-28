@@ -9,51 +9,40 @@ const {
   validatePassword,
   validateName,
 } = require('../utils/validation');
+const {
+  ValidationError,
+  AuthError,
+  AppError
+} = require('../utils/customErrors');
 
 // 더미 해시 (타이밍 공격 방어용)
 const DUMMY_HASH = '$2b$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcg7b3XeKeUxWdeS86E36gZvWFm';
 
 // POST /api/auth/signup - 회원가입
-router.post('/signup', async (req, res) => {
+router.post('/signup', async (req, res, next) => {
   try {
     const { email, password, name } = req.body;
 
     // 1. 요청 바디 검증
     if (!email || !password || !name) {
-      return res.status(400).json({
-        status: 'error',
-        message: 'Missing required fields: email, password, name',
-        errorCode: 'MISSING_FIELDS',
-      });
+      throw new ValidationError('Missing required fields: email, password, name', 'fields');
     }
 
     // 2. 이메일 형식 검증
     if (!validateEmail(email)) {
-      return res.status(400).json({
-        status: 'error',
-        message: 'Invalid email format',
-        errorCode: 'INVALID_EMAIL',
-      });
+      throw new ValidationError('Invalid email format', 'email');
     }
 
     // 3. 비밀번호 검증
     const passwordValidation = validatePassword(password);
     if (!passwordValidation.valid) {
-      return res.status(400).json({
-        status: 'error',
-        message: passwordValidation.error,
-        errorCode: 'INVALID_PASSWORD',
-      });
+      throw new ValidationError(passwordValidation.error, 'password');
     }
 
     // 4. 이름 검증
     const nameValidation = validateName(name);
     if (!nameValidation.valid) {
-      return res.status(400).json({
-        status: 'error',
-        message: nameValidation.error,
-        errorCode: 'INVALID_NAME',
-      });
+      throw new ValidationError(nameValidation.error, 'name');
     }
 
     // 5. 이메일 중복 확인
@@ -63,11 +52,7 @@ router.post('/signup', async (req, res) => {
     );
 
     if (existingUser.rows.length > 0) {
-      return res.status(400).json({
-        status: 'error',
-        message: 'Email already exists',
-        errorCode: 'EMAIL_ALREADY_EXISTS',
-      });
+      throw new ValidationError('Email already exists', 'email');
     }
 
     // 6. 비밀번호 해시
@@ -93,8 +78,6 @@ router.post('/signup', async (req, res) => {
       },
     });
   } catch (err) {
-    console.error('Signup error:', err);
-
     // 데이터베이스 unique constraint 오류 처리 (Race condition 대응)
     if (err.code === '23505') {
       return res.status(400).json({
@@ -104,35 +87,24 @@ router.post('/signup', async (req, res) => {
       });
     }
 
-    res.status(500).json({
-      status: 'error',
-      message: 'Internal server error',
-      errorCode: 'INTERNAL_ERROR',
-    });
+    // Pass the error to the global error handler
+    next(err);
   }
 });
 
 // POST /api/auth/login - 로그인
-router.post('/login', async (req, res) => {
+router.post('/login', async (req, res, next) => {
   try {
     const { email, password } = req.body;
 
     // 1. 요청 바디 검증
     if (!email || !password) {
-      return res.status(400).json({
-        status: 'error',
-        message: 'Missing required fields: email, password',
-        errorCode: 'MISSING_FIELDS',
-      });
+      throw new ValidationError('Missing required fields: email, password', 'fields');
     }
 
     // 2. 이메일 형식 검증
     if (!validateEmail(email)) {
-      return res.status(400).json({
-        status: 'error',
-        message: 'Invalid email format',
-        errorCode: 'INVALID_EMAIL',
-      });
+      throw new ValidationError('Invalid email format', 'email');
     }
 
     // 3. 이메일로 사용자 조회
@@ -154,11 +126,7 @@ router.post('/login', async (req, res) => {
 
     // 일관된 응답 (존재 여부 구분 안 함)
     if (!user || !isPasswordValid) {
-      return res.status(401).json({
-        status: 'error',
-        message: 'Invalid email or password',
-        errorCode: 'INVALID_CREDENTIALS',
-      });
+      throw new AuthError('Invalid email or password');
     }
 
     // 5. JWT 토큰 생성
@@ -178,12 +146,8 @@ router.post('/login', async (req, res) => {
       },
     });
   } catch (err) {
-    console.error('Login error:', err);
-    res.status(500).json({
-      status: 'error',
-      message: 'Internal server error',
-      errorCode: 'INTERNAL_ERROR',
-    });
+    // Pass the error to the global error handler
+    next(err);
   }
 });
 

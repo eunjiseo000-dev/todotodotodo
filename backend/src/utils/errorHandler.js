@@ -75,7 +75,12 @@ const errorHandler = (err, req, res, next) => {
   }
 
   // HTTP 상태 코드가 명시된 에러 처리 (예: 400, 401, 403, 404 등)
-  const statusCode = err.status || err.statusCode || 500;
+  let statusCode = err.statusCode || err.status || 500;
+
+  // statusCode가 유효한 HTTP 상태 코드인지 확인
+  if (typeof statusCode !== 'number' || statusCode < 100 || statusCode > 599) {
+    statusCode = 500;
+  }
 
   // 에러 코드 매핑
   let errorCode = err.errorCode || 'INTERNAL_ERROR';

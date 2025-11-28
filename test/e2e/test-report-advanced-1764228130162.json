@@ -1,0 +1,40 @@
+{
+  "timestamp": "2025-11-27T07:21:59.126Z",
+  "scenarios": [
+    {
+      "scenario": "User Signup",
+      "status": "PASS",
+      "details": "Signup completed",
+      "timestamp": "2025-11-27T07:22:04.400Z"
+    },
+    {
+      "scenario": "User Login",
+      "status": "PASS",
+      "details": "Login success and redirected",
+      "timestamp": "2025-11-27T07:22:09.332Z"
+    },
+    {
+      "scenario": "Dashboard Load",
+      "status": "PASS",
+      "details": "Content loaded",
+      "timestamp": "2025-11-27T07:22:09.975Z"
+    },
+    {
+      "scenario": "UI Elements",
+      "status": "PASS",
+      "details": "Buttons: 6, Inputs: 0",
+      "timestamp": "2025-11-27T07:22:10.001Z"
+    },
+    {
+      "scenario": "Backend API",
+      "status": "PASS",
+      "details": "Server is healthy",
+      "timestamp": "2025-11-27T07:22:10.023Z"
+    }
+  ],
+  "summary": {
+    "total": 5,
+    "passed": 5,
+    "failed": 0
+  }
+}

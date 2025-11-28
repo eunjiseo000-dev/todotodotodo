@@ -1,0 +1,58 @@
+{
+  "timestamp": "2025-11-27T07:20:41.562Z",
+  "scenarios": [
+    {
+      "scenario": "회원가입 페이지 접근",
+      "status": "PASS",
+      "details": "페이지 로드됨",
+      "timestamp": "2025-11-27T07:20:42.358Z"
+    },
+    {
+      "scenario": "회원가입 폼 입력",
+      "status": "PASS",
+      "details": "이름, 이메일, 비밀번호 입력 완료",
+      "timestamp": "2025-11-27T07:20:42.816Z"
+    },
+    {
+      "scenario": "회원가입 제출",
+      "status": "PASS",
+      "details": "회원가입 처리 완료",
+      "timestamp": "2025-11-27T07:20:46.950Z"
+    },
+    {
+      "scenario": "로그인 페이지 접근",
+      "status": "PASS",
+      "details": "로그인 페이지 로드됨",
+      "timestamp": "2025-11-27T07:20:47.633Z"
+    },
+    {
+      "scenario": "로그인 및 대시보드 이동",
+      "status": "PASS",
+      "details": "로그인 성공",
+      "timestamp": "2025-11-27T07:20:52.001Z"
+    },
+    {
+      "scenario": "대시보드 로드",
+      "status": "PASS",
+      "details": "대시보드 컨텐츠 로드됨",
+      "timestamp": "2025-11-27T07:20:53.675Z"
+    },
+    {
+      "scenario": "UI 요소 확인",
+      "status": "PASS",
+      "details": "버튼 요소 6개 발견",
+      "timestamp": "2025-11-27T07:20:53.682Z"
+    },
+    {
+      "scenario": "백엔드 API 상태",
+      "status": "PASS",
+      "details": "API 서버 정상 작동",
+      "timestamp": "2025-11-27T07:20:53.692Z"
+    }
+  ],
+  "summary": {
+    "total": 8,
+    "passed": 8,
+    "failed": 0
+  }
+}

@@ -1,0 +1,53 @@
+{
+  "timestamp": "2025-11-27T07:06:06.928Z",
+  "scenarios": [
+    {
+      "scenario": "Scenario 0: 로그인",
+      "status": "PASS",
+      "details": "",
+      "timestamp": "2025-11-27T07:06:13.397Z"
+    },
+    {
+      "scenario": "Scenario 1: 아침 회의 시 할일 추가 (3개)",
+      "status": "PASS",
+      "details": "",
+      "timestamp": "2025-11-27T07:06:20.829Z"
+    },
+    {
+      "scenario": "Scenario 2: 점심시간 진행률 확인 및 완료",
+      "status": "PASS",
+      "details": "",
+      "timestamp": "2025-11-27T07:06:22.575Z"
+    },
+    {
+      "scenario": "Scenario 3: 할일 내용 및 일정 변경",
+      "status": "PASS",
+      "details": "",
+      "timestamp": "2025-11-27T07:06:22.632Z"
+    },
+    {
+      "scenario": "Scenario 4: 실수로 삭제한 할일 복구",
+      "status": "PASS",
+      "details": "",
+      "timestamp": "2025-11-27T07:06:22.686Z"
+    },
+    {
+      "scenario": "Scenario 5: 우선순위 변경 확인",
+      "status": "PASS",
+      "details": "",
+      "timestamp": "2025-11-27T07:06:22.730Z"
+    },
+    {
+      "scenario": "Scenario 6: 영구삭제",
+      "status": "PASS",
+      "details": "",
+      "timestamp": "2025-11-27T07:06:22.779Z"
+    }
+  ],
+  "summary": {
+    "passed": 7,
+    "failed": 0,
+    "total": 7,
+    "successRate": "100%"
+  }
+}

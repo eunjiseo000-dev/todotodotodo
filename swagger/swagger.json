@@ -284,7 +284,7 @@
     }
   },
   "paths": {
-    "/auth/signup": {
+    "/api/auth/signup": {
       "post": {
         "tags": ["인증"],
         "summary": "회원가입",
@@ -341,7 +341,7 @@
         }
       }
     },
-    "/auth/login": {
+    "/api/auth/login": {
       "post": {
         "tags": ["인증"],
         "summary": "로그인",
@@ -395,7 +395,7 @@
         }
       }
     },
-    "/todos": {
+    "/api/todos": {
       "get": {
         "tags": ["할일 관리"],
         "summary": "할일 목록 조회",
@@ -524,7 +524,7 @@
         }
       }
     },
-    "/todos/{todoId}": {
+    "/api/todos/{todoId}": {
       "get": {
         "tags": ["할일 관리"],
         "summary": "할일 상세 조회",
@@ -748,7 +748,7 @@
         }
       }
     },
-    "/todos/{todoId}/complete": {
+    "/api/todos/{todoId}/complete": {
       "patch": {
         "tags": ["할일 관리"],
         "summary": "할일 완료 처리",
@@ -815,7 +815,7 @@
         }
       }
     },
-    "/todos/{todoId}/restore": {
+    "/api/todos/{todoId}/restore": {
       "patch": {
         "tags": ["할일 관리"],
         "summary": "할일 복구",
@@ -886,7 +886,7 @@
         }
       }
     },
-    "/todos/{todoId}/permanent": {
+    "/api/todos/{todoId}/permanent": {
       "delete": {
         "tags": ["할일 관리"],
         "summary": "할일 영구삭제",
@@ -970,7 +970,7 @@
         }
       }
     },
-    "/todos/{todoId}/priority": {
+    "/api/todos/{todoId}/priority": {
       "patch": {
         "tags": ["할일 관리"],
         "summary": "우선순위 변경",
